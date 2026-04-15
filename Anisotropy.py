@@ -14,7 +14,7 @@ x = np.linspace(-5, 5, N_nu)
 
 # --- Doppler profile ---
 phi = np.exp(-x**2) / np.sqrt(np.pi)
-phi /= np.trapz(phi, x)
+phi /= np.trapezoid(phi, x)
 
 # --- Physical parameters ---
 epsilon = 1e-4
@@ -81,8 +81,8 @@ for it in range(n_iter):
     )
 
     # --- Frequency integration with Doppler profile ---
-    J00_int = np.trapz(J00 * phi, x, axis=1)
-    J02_int = np.trapz(J02 * phi, x, axis=1)
+    J00_int = np.trapezoid(J00 * phi, x, axis=1)
+    J02_int = np.trapezoid(J02 * phi, x, axis=1)
 
     # --- Update source functions (consistent normalization!) ---
     S_I_new = (1 - epsilon) * J00_int + epsilon * B
@@ -132,7 +132,7 @@ x = np.linspace(-5, 5, N_nu)
 
 # --- Doppler profile ---
 phi = np.exp(-x**2)/np.sqrt(np.pi)
-phi /= np.trapz(phi, x)
+phi /= np.trapezoid(phi, x)
 
 # --- Physical parameters ---
 epsilon = 1e-4
@@ -182,8 +182,8 @@ def compute_J(I):
     w3d = w.reshape(1, N_mu, 1)
     J00 = 0.5*np.sum(w3d * I, axis=1)
     J02 = (1/(4*np.sqrt(2))) * np.sum(w3d * P2.reshape(1,N_mu,1) * I, axis=1)
-    J00_int = np.trapz(J00*phi, x, axis=1)
-    J02_int = np.trapz(J02*phi, x, axis=1)
+    J00_int = np.trapezoid(J00*phi, x, axis=1)
+    J02_int = np.trapezoid(J02*phi, x, axis=1)
     return J00_int, J02_int
 
 # --- Optimized Gauss–Seidel iteration ---
@@ -1157,3 +1157,235 @@ for m in range(N_mu):
         test += w * T[('I','1c')] * T[('I','1s')]
 
 print(f"Orthogonality test (1c vs 1s): {test:.3e}")
+
+
+# ALI -------------------------------
+
+# -----------------------
+# GRID
+# -----------------------
+N_tau = 100
+tau = np.logspace(-4, 8, N_tau)
+
+N_mu = 12
+mu, w_mu = np.polynomial.legendre.leggauss(N_mu)
+
+N_chi = 8
+chi = np.linspace(0, 2*np.pi, N_chi, endpoint=False)
+w_chi = 2*np.pi / N_chi
+
+# -----------------------
+# PHYSICS
+# -----------------------
+epsilon = 1e-4
+B = 1.0
+omega = 1.0
+
+# --- Hanle parameter ---
+Gamma = 1.0  # try 0, 1, 10
+
+def hanle_factor(Gamma):
+    return 1/5 + (4/5)/(1 + Gamma**2)
+
+H2 = hanle_factor(Gamma)
+
+# -----------------------
+# INITIALIZE TENSORS
+# -----------------------
+def init_tensor(N):
+    S = {}
+    S[(0,0)] = np.ones(N) * B
+    S[(2,0)] = np.zeros(N)
+
+    for q in ['1c','1s','2c','2s']:
+        S[(2,q)] = np.zeros(N)
+
+    return S
+
+S = init_tensor(N_tau)
+
+# --- Short Characteristics ---
+@jit(nopython=True)
+def short_characteristics(tau, S, mu, I_boundary):
+    ND = S.shape[0]
+    begin = ND-1
+    end = -1
+    step = -1
+    if mu < 0:
+        begin = 0
+        end = ND
+        step = 1
+
+    I = np.zeros(ND)
+    L = np.zeros(ND)
+    I[begin] = I_boundary
+
+    for d in range(begin+step,end-step,step):
+        delta_u = (tau[d-step] - tau[d])/mu
+        delta_d = (tau[d] - tau[d+step])/mu
+        expd = np.exp(-delta_u)
+
+        if delta_u <= 0.01:
+            du = delta_u
+            w0 = du*(1.-du/2.+du**2/6.-du**3/24.+du**4/120.-du**5/720.+du**6/5040.-du**7/40320.+du**8/362880.)
+            w1 = du**2*(0.5-du/3.+du**2/8.-du**3/30.+du**4/144.-du**5/840.+du**6/5760.-du**7/45360.+du**8/403200.)
+            w2 = du**3*(1./3.-du/4.+du**2/10.-du**3/36.+du**4/168.-du**5/960.+du**6/6480.-du**7/50400.+du**8/443520.)
+        else:
+            w0 = 1.0 - expd
+            w1 = w0 - delta_u * expd
+            w2 = 2.0 * w1 - delta_u**2 * expd
+
+        psi0 = w0 + (w1*(delta_u/delta_d - delta_d/delta_u) - w2*(1.0/delta_d + 1.0/delta_u))/(delta_u+delta_d)
+        psiu = (w2/delta_u + w1*delta_d/delta_u)/(delta_u+delta_d)
+        psid = (w2/delta_d - w1*delta_u/delta_d)/(delta_u+delta_d)
+
+        I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d] + psid*S[d+step]
+        L[d] = psi0
+
+    # last point linear
+    d = end-step
+    delta_u = (tau[d-step]-tau[d])/mu
+    expd = np.exp(-delta_u)
+    if delta_u < 0.01:
+        expd = 1.0 - delta_u + delta_u**2/2 - delta_u**3/6
+        psi0 = delta_u/2 - delta_u**2/6 + delta_u**3/24
+        psiu = delta_u/2 - delta_u**2/3 + delta_u**3/8
+    else:
+        psi0 = 1.0 - (1.0 - expd)/delta_u
+        psiu = -expd + (1.0 - expd)/delta_u
+
+    I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d]
+    L[d] = psi0
+
+    return np.asarray(I), np.asarray(L)
+
+# -----------------------
+# ITERATION (SCALAR ALI + LIVE STOKES DIAGNOSTICS)
+# -----------------------
+
+n_iter = 50
+
+H2 = 1/5 + (4/5)/(1 + Gamma**2)
+
+for it in range(n_iter):
+
+    S00_old = S[(0,0)].copy()
+
+    J00 = np.zeros(N_tau)
+    J20 = np.zeros(N_tau)
+    Lambda_diag = np.zeros(N_tau)
+
+    I_store = np.zeros((N_tau, N_mu, N_chi))
+    Q_store = np.zeros((N_tau, N_mu, N_chi))
+    U_store = np.zeros((N_tau, N_mu, N_chi))
+
+    # =========================================================
+    # FORMAL SOLUTION LOOP
+    # =========================================================
+    for m in range(N_mu):
+        mu_m = mu[m]
+
+        for k in range(N_chi):
+            chi_k = chi[k]
+
+            T = compute_tensors(mu_m, chi_k)
+
+            # -----------------------
+            # SCALAR SOURCE ONLY
+            # -----------------------
+            S_source = S[(0,0)]
+
+            I_sc, L_sc = short_characteristics(
+                tau, S_source, mu_m,
+                (B if mu_m <= 0 else 0.0)
+            )
+
+            w = w_mu[m] * w_chi / (4*np.pi)
+
+            # -----------------------
+            # STORE INTENSITY
+            # -----------------------
+            print("I_sc type:", type(I_sc))
+            print("I_sc shape:", np.shape(I_sc))
+            print("I_store slice shape:", I_store[:, m, k].shape)
+            I_store[:, m, k] = I_sc
+
+            # -----------------------
+            # J00
+            # -----------------------
+            J00 += w * I_sc
+
+            # -----------------------
+            # Λ DIAGONAL
+            # -----------------------
+            Lambda_diag += w * L_sc
+
+            # -----------------------
+            # J20 (diagnostic anisotropy only)
+            # -----------------------
+            J20 += w * (
+                T[('I', 0)] * I_sc
+            )
+
+            # =====================================================
+            # STOKES RECONSTRUCTION (INSIDE LOOP - DIAGNOSTIC ONLY)
+            # =====================================================
+
+            f2 = np.sqrt(3)/4 * (1 - mu_m**2)
+
+            Q_sc = H2 * f2 * np.cos(2 * chi_k) * I_sc
+            U_sc = H2 * f2 * np.sin(2 * chi_k) * I_sc
+
+            Q_store[:, m, k] = Q_sc
+            U_store[:, m, k] = U_sc
+
+    # =========================================================
+    # ALI UPDATE (SCALAR ONLY)
+    # =========================================================
+    for d in range(N_tau):
+
+        denom = 1.0 - (1 - epsilon) * Lambda_diag[d]
+
+        S[(0,0)][d] = (
+            (1 - epsilon) * J00[d] + epsilon * B
+        ) / denom
+
+    # =========================================================
+    # CONVERGENCE CHECK
+    # =========================================================
+    err = np.max(np.abs(S[(0,0)] - S00_old))
+
+    print(f"Iter {it}: error = {err:.3e}")
+
+    if err < 1e-6:
+        break
+
+anisotropy = J20 / (J00 + 1e-12)
+S20 = H2 * J20
+
+# --- Plot ---
+plt.figure(figsize=(6,5))
+plt.semilogx(tau, anisotropy, '-o')
+plt.xlabel("Optical depth τ")
+plt.ylabel(r"$J^0_2 / J^0_0$")
+plt.title("Anisotropy (ALI Scalar)")
+plt.grid()
+plt.legend()
+plt.show()
+
+print("\n--- FINAL DIAGNOSTICS ---")
+print(f"Gamma = {Gamma}")
+print(f"Hanle factor H2 = {H2:.3f}")
+
+print(f"Max S00 = {np.max(S[(0,0)]):.3e}")
+print(f"Max J00 = {np.max(J00):.3e}")
+print(f"Max anisotropy (J20/J00) = {np.max(np.abs(anisotropy)):.3e}")
+print(f"Lambda_diag range = [{Lambda_diag.min():.3f}, {Lambda_diag.max():.3f}]")
+
+print(f"Max Q = {np.max(Q_store):.3e}")
+print(f"Max U = {np.max(U_store):.3e}")
+
+chi_var = np.max(
+    np.abs(I_store - np.mean(I_store, axis=2, keepdims=True))
+)
+print(f"Chi-variation in I: {chi_var:.3e}")
