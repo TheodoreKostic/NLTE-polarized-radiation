@@ -11,6 +11,9 @@ B = 1.0 # Planck function
 def hanle_factor(Gamma):
     return 1/5 + (4/5)/(1 + Gamma**2)
 
+def doppler_profile(x):
+    return np.exp(-x**2) / np.sqrt(np.pi)
+
 
 def init_tensor(N):
     S = {}
