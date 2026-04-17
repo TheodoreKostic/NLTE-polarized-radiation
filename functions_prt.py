@@ -14,6 +14,12 @@ def hanle_factor(Gamma):
 def doppler_profile(x):
     return np.exp(-x**2) / np.sqrt(np.pi)
 
+def init_tensor_1D(N):
+    S = {}
+    S[(0,0)] = np.ones(N) * B
+    S[(2,0)] = np.zeros(N)
+
+    return S
 
 def init_tensor(N):
     S = {}
@@ -83,6 +89,21 @@ def short_characteristics(tau, S, mu, I_boundary):
 # -----------------------
 # TENSOR COMPUTATION
 # -----------------------
+def T20(mu):
+    return 0.5 * (3*mu**2 - 1)
+
+def T2Q(mu):
+    return 1.5 * (1 - mu**2)
+
+def emergent_stokes(S, mu):
+    T_I = T20(mu)
+    T_Q = T2Q(mu)
+
+    I_out = S[(0,0)] + T_I * S[(2,0)]
+    Q_out = T_Q * S[(2,0)]
+
+    return I_out, Q_out
+
 def compute_tensors(mu, chi):
 
     sin_t = np.sqrt(1 - mu**2)
