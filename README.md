@@ -12,3 +12,11 @@ for polarized radiation field due to presence of magnetic field.
   <li>How does microturbulent (intensity only) magnetic field impact the source functions?</li>
   <li>Full magnetic field vector -> S<sub>I</sub>, S<sub>Q</sub>, <b>S<sub>U</sub></b>. In general, they are coupled.</li>
 </ol>
+
+# Progress
+`21. 04. 2026.`
+<ul>
+  <li> Updated <it>1D_case_density_matrix.py</it> to reasonable state. Still using Lambda iteration, but will implement ALI in future. </li>
+  <li> Next step: implement magnetic field effects on source functions (use actual H2 instead of 1.0). </li>
+  <li> Check if emergent Q/I is reasonable (should be small, but not zero due to anisotropy). </li>
+</ul>
