@@ -50,7 +50,7 @@ S = {
 # Main iteration loop
 # =============================================================================
 
-n_iter = 1000
+n_iter = 150
 for it in range(n_iter):
 
     S_old = {k: v.copy() for k, v in S.items()}
@@ -58,6 +58,8 @@ for it in range(n_iter):
     # Initialize moment accumulators (frequency-integrated)
     J00 = np.zeros(N_tau)
     J20 = np.zeros(N_tau)
+    J00_nu = np.zeros((N_tau, N_nu))  # Shape: (depth, frequency)
+    J20_nu = np.zeros((N_tau, N_nu))
 
     I_sol = np.zeros((N_tau, N_nu))  # Store full I solution for emergent
     Q_sol = np.zeros((N_tau, N_nu))  # Store full Q solution for emergent
@@ -97,7 +99,7 @@ for it in range(n_iter):
         for n in range(N_nu):
             # In complete frequency redistribution, optical depth is frequency-independent
             # (resonance line scattering redistributes frequencies)
-            tau_eff = tau
+            tau_eff = tau * phi_nu[n]  # Effective optical depth at this frequency
             
             # Solve transfer equations: dI/dτ = S_I - I, dQ/dτ = S_Q - Q
             I_sc = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary)
@@ -115,6 +117,8 @@ for it in range(n_iter):
             J00_mu += phi_nu[n] * dx_nu * I_sc
             J20_mu += phi_nu[n] * dx_nu * (P2 * I_sc + 3*(mu_m**2 - 1) * Q_sc)
 
+            J00_nu[:, n] += 0.5 * w_m * phi_nu[n] * dx_nu * I_sc
+            J20_nu[:, n] += (1/(4*np.sqrt(2))) * w_m * phi_nu[n] * dx_nu * (P2 * I_sc + 3*(mu_m**2 - 1) * Q_sc)
         # =====================================================================
         # Add this angle's contribution to total moments (Eq. 10-11)
         # =====================================================================
@@ -154,20 +158,19 @@ for it in range(n_iter):
 # anisotropy (frequency-integrated)
 anisotropy_depth = J20 / (J00 + 1e-12)
 
-# Compute emergent Stokes parameters to check if Q vanishes
+# Compute emergent Stokes parameters at SURFACE (τ ≈ 0, index [0])
 I_emerge = np.zeros(N_mu)
 Q_emerge = np.zeros(N_mu)
 
 for m in range(N_mu):
     mu_m = mu[m]
-    # Tensor basis functions (paper Eq. 8-9)
-    T_I = 0.5 * (3*mu_m**2 - 1)           # (1/√2) × P2, but paper uses unnormalized
-    T_Q = 1.5 * (1 - mu_m**2)             # (3/(2√2)) × (1-μ²), but paper uses unnormalized
+    # Tensor basis functions MATCHING SOURCE DECOMPOSITION (Eq. 8-9)
+    T_I = (1/np.sqrt(2)) * (3*mu_m**2 - 1)        # Matches line 88
+    T_Q = (3/(2*np.sqrt(2))) * (1 - mu_m**2)      # Matches line 89
     
-    # Emergent intensity and Q from source tensor components
-    # At surface (τ → 0): I ≈ S_I, Q ≈ S_Q
-    I_emerge[m] = S[(0,0)][-1] + T_I * S[(2,0)][-1]
-    Q_emerge[m] = T_Q * S[(2,0)][-1]
+    # Emergent intensity and Q from source tensor components AT SURFACE
+    I_emerge[m] = S[(0,0)][0] + T_I * S[(2,0)][0]    # Use [0] not [-1]
+    Q_emerge[m] = T_Q * S[(2,0)][0]                   # Use [0] not [-1]
 
 # Calculate Q/I ratio
 Q_over_I = Q_emerge / (I_emerge + 1e-12)
@@ -199,6 +202,22 @@ plt.ylabel(r"$J^0_2 / J^0_0$")
 plt.title("Anisotropy (Tensor formulation with frequency grid)")
 plt.grid()
 plt.savefig("anisotropy_tensor.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+freqs_to_plot = [0, N_nu//4, N_nu//2, 3*N_nu//4, N_nu-1]  # Line core and wings
+
+plt.figure(figsize=(10, 6))
+for idx in freqs_to_plot:
+    freq_label = f'x = {x_nu[idx]:.1f} Doppler widths'
+    anisotropy_nu = J20_nu[:, idx] / (J00_nu[:, idx] + 1e-12)
+    plt.semilogx(tau, anisotropy_nu, '-o', label=freq_label)
+
+plt.xlabel("Optical depth τ")
+plt.ylabel(r"$J^0_2 / J^0_0$ (frequency-dependent)")
+plt.title("Anisotropy vs Frequency (Should show negative dip in line core)")
+plt.axhline(0, color='k', linestyle='--', alpha=0.3)
+plt.legend()
+plt.grid()
 plt.show()
 
 
