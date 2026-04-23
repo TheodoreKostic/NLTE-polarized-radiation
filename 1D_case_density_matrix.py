@@ -208,7 +208,7 @@ plt.figure(figsize=(6,5))
 plt.semilogx(tau, anisotropy_depth, '-o')
 plt.xlabel("Optical depth τ")
 plt.ylabel(r"$J^0_2 / J^0_0$")
-plt.title("Anisotropy (Tensor formulation with frequency grid)")
+plt.title("Anisotropy vs Depth")
 plt.grid()
 plt.savefig("anisotropy_tensor.png", dpi=300, bbox_inches='tight')
 plt.show()
@@ -393,5 +393,194 @@ plt.semilogx(tau, anisotropy, '-o')
 plt.xlabel("Optical depth τ")
 plt.ylabel(r"$J^0_2 / J^0_0$")
 plt.title("Anisotropy (frequency-resolved source method)")
+plt.grid()
+plt.show()
+
+# =============================================================================
+# 1D Resonance Line Polarization — FINAL ALI IMPLEMENTATION
+# Uses TRUE diagonal Lambda* from short_characteristics_ALI()
+# =============================================================================
+
+# ----------------------------
+# grids
+# ----------------------------
+N_tau = 91
+tau = np.logspace(-4, 4, N_tau)
+
+N_mu = 16
+mu, w_mu = np.polynomial.legendre.leggauss(N_mu)
+
+N_nu = 121
+x_nu = np.linspace(-5, 5, N_nu)
+
+phi_nu = doppler_profile(x_nu)
+phi_nu /= np.trapezoid(phi_nu, x_nu)
+
+# ----------------------------
+# parameters
+# ----------------------------
+epsilon = 1e-4
+B = 1.0
+H2 = 1.0
+
+# ----------------------------
+# initial source functions
+# ----------------------------
+S = {
+    (0,0): np.ones(N_tau) * B,
+    (2,0): np.zeros(N_tau)
+}
+
+# =============================================================================
+# MAIN ITERATION LOOP
+# =============================================================================
+
+n_iter = 50
+
+for it in range(n_iter):
+
+    S_old = {k: v.copy() for k, v in S.items()}
+
+    # ----------------------------------------
+    # radiation field
+    # ----------------------------------------
+    J00_nu = np.zeros((N_tau, N_nu))
+    J20_nu = np.zeros((N_tau, N_nu))
+
+    # ----------------------------------------
+    # TRUE diagonal Lambda*
+    # ----------------------------------------
+    Lambda_star = np.zeros(N_tau)
+
+    # ============================================================
+    # ANGULAR LOOP
+    # ============================================================
+    for m in range(N_mu):
+
+        mu_m = mu[m]
+        w_m = w_mu[m]
+
+        P2 = (3 * mu_m**2 - 1)
+
+        # tensor source decomposition
+        S_I_mu = S[(0,0)] + (1/np.sqrt(2)) * P2 * S[(2,0)]
+        S_Q_mu = (3/(2*np.sqrt(2))) * (1 - mu_m**2) * S[(2,0)]
+
+        I_boundary = B if mu_m > 0 else 0.0
+
+        # ========================================================
+        # FREQUENCY LOOP
+        # ========================================================
+        for n in range(N_nu):
+
+            # frequency-dependent optical depth
+            tau_eff = tau * phi_nu[n]
+
+            # ----------------------------------------------------
+            # SHORT CHARACTERISTICS ALI SOLVER
+            # returns:
+            # I_sc = intensity
+            # L    = psi0 = LOCAL RESPONSE (diagonal Λ kernel)
+            # ----------------------------------------------------
+            I_sc, L = short_characteristics(
+                tau_eff,
+                S_I_mu,
+                mu_m,
+                I_boundary,
+                ali=True
+            )
+
+            # ----------------------------------------------------
+            # radiation field tensors
+            # ----------------------------------------------------
+            J00_nu[:, n] += 0.5 * w_m * I_sc
+
+            J20_nu[:, n] += (1/(4*np.sqrt(2))) * w_m * (
+                P2 * I_sc + 3*(mu_m**2 - 1) * S_Q_mu
+            )
+
+            # ----------------------------------------------------
+            # BUILD TRUE Λ* (core of ALI)
+            # ----------------------------------------------------
+            Lambda_star += 0.5 * w_m * L
+
+    # ============================================================
+    # frequency integration
+    # ============================================================
+    J00 = np.trapezoid(phi_nu * J00_nu, x_nu, axis=1)
+    J20 = np.trapezoid(phi_nu * J20_nu, x_nu, axis=1)
+
+    # ============================================================
+    # statistical equilibrium RHS
+    # ============================================================
+    R00 = (1 - epsilon) * J00 + epsilon * B
+
+    # ============================================================
+    # FINAL ALI UPDATE (true operator splitting)
+    # ============================================================
+    den = 1.0 - (1 - epsilon) * Lambda_star
+    den = np.maximum(den, 0.3)
+    S[(0,0)] = R00 / den
+
+    # polarization is NOT inverted with Λ*
+    S[(2,0)] = (1 - epsilon) * J20 / (1 + H2)
+
+    # enforce physical boundary condition
+    S[(2,0)][-1] = 0.0
+
+    # ============================================================
+    # convergence check
+    # ============================================================
+    diff = max(
+        np.max(np.abs(S[(0,0)] - S_old[(0,0)])),
+        np.max(np.abs(S[(2,0)] - S_old[(2,0)]))
+    )
+
+    print(f"Iter {it}: error = {diff:.3e}")
+
+    if diff < 1e-6:
+        print("Converged")
+        break
+
+# =============================================================================
+# POSTPROCESSING
+# =============================================================================
+
+anisotropy = S[(2,0)] / (S[(0,0)] + 1e-12)
+
+# emergent Stokes
+I_emerge = np.zeros(N_mu)
+Q_emerge = np.zeros(N_mu)
+
+for m in range(N_mu):
+
+    mu_m = mu[m]
+
+    T_I = (1/np.sqrt(2)) * (3*mu_m**2 - 1)
+    T_Q = (3/(2*np.sqrt(2))) * (1 - mu_m**2)
+
+    I_emerge[m] = S[(0,0)][0] + T_I * S[(2,0)][0]
+    Q_emerge[m] = T_Q * S[(2,0)][0]
+
+Q_over_I = Q_emerge / (I_emerge + 1e-12)
+
+# =============================================================================
+# OUTPUT
+# =============================================================================
+
+print("--------------------------------------")
+print(f"Surface anisotropy: {anisotropy[0]:.6e}")
+print(f"Max Q/I (%): {np.max(np.abs(Q_over_I))*100:.3f}")
+print("--------------------------------------")
+
+# =============================================================================
+# PLOT
+# =============================================================================
+
+plt.figure(figsize=(6,5))
+plt.semilogx(tau, anisotropy, '-o')
+plt.xlabel("Optical depth τ")
+plt.ylabel(r"$J^2_0 / J^0_0$")
+plt.title("FINAL ALI with true Λ* from SC kernel")
 plt.grid()
 plt.show()

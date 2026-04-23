@@ -33,7 +33,7 @@ def init_tensor(N):
 
 # --- Short Characteristics ---
 @jit(nopython=True)
-def short_characteristics(tau, S, mu, I_boundary):
+def short_characteristics(tau, S, mu, I_boundary, ali = False):
     ND = S.shape[0]
     begin = ND-1
     end = -1
@@ -84,63 +84,10 @@ def short_characteristics(tau, S, mu, I_boundary):
     I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d]
     L[d] = psi0
 
-    return I
-
-@jit(nopython=True)
-def short_characteristics_ALI(tau, S, mu, I_boundary):
-    ND = S.shape[0]
-    begin = ND-1
-    end = -1
-    step = -1
-    if mu < 0:
-        begin = 0
-        end = ND
-        step = 1
-
-    I = np.zeros(ND)
-    L = np.zeros(ND)
-    I[begin] = I_boundary
-
-    for d in range(begin+step,end-step,step):
-        delta_u = (tau[d-step] - tau[d])/mu
-        delta_d = (tau[d] - tau[d+step])/mu
-        expd = np.exp(-delta_u)
-
-        if delta_u <= 0.01:
-            du = delta_u
-            w0 = du*(1.-du/2.+du**2/6.-du**3/24.+du**4/120.-du**5/720.+du**6/5040.-du**7/40320.+du**8/362880.)
-            w1 = du**2*(0.5-du/3.+du**2/8.-du**3/30.+du**4/144.-du**5/840.+du**6/5760.-du**7/45360.+du**8/403200.)
-            w2 = du**3*(1./3.-du/4.+du**2/10.-du**3/36.+du**4/168.-du**5/960.+du**6/6480.-du**7/50400.+du**8/443520.)
-        else:
-            w0 = 1.0 - expd
-            w1 = w0 - delta_u * expd
-            w2 = 2.0 * w1 - delta_u**2 * expd
-
-        psi0 = w0 + (w1*(delta_u/delta_d - delta_d/delta_u) - w2*(1.0/delta_d + 1.0/delta_u))/(delta_u+delta_d)
-        psiu = (w2/delta_u + w1*delta_d/delta_u)/(delta_u+delta_d)
-        psid = (w2/delta_d - w1*delta_u/delta_d)/(delta_u+delta_d)
-
-        I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d] + psid*S[d+step]
-        L[d] = psi0
-
-    # last point linear
-    d = end-step
-    delta_u = (tau[d-step]-tau[d])/mu
-    expd = np.exp(-delta_u)
-    if delta_u < 0.01:
-        expd = 1.0 - delta_u + delta_u**2/2 - delta_u**3/6
-        psi0 = delta_u/2 - delta_u**2/6 + delta_u**3/24
-        psiu = delta_u/2 - delta_u**2/3 + delta_u**3/8
+    if not ali:
+        return I
     else:
-        psi0 = 1.0 - (1.0 - expd)/delta_u
-        psiu = -expd + (1.0 - expd)/delta_u
-
-    I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d]
-    L[d] = psi0
-
-    return I, L
-
-
+        return I, L
 
 # -----------------------
 # TENSOR COMPUTATION
