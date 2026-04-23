@@ -20,3 +20,10 @@ for polarized radiation field due to presence of magnetic field.
   <li> Next step: implement magnetic field effects on source functions (use actual H2 instead of 1.0). </li>
   <li> Check if emergent Q/I is reasonable (should be small, but not zero due to anisotropy). </li>
 </ul>
+
+`24. 04. 2026.`
+<ul>
+  <li> Q/I is relatively small, but not zero. </li>
+  <li> Added ALI option in <it>functions_prt.py</it>. </li>
+  <li> Frequency-resolved radiation field → frequency-resolved source function, but ALI is causing issues when trying to solve polarized radiative transfer. </li>
+</ul>
