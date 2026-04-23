@@ -22,15 +22,15 @@ from functions_prt import *
 # =============================================================================
 
 # Optical depth grid
-N_tau = 50
-tau = np.logspace(-4, 8, N_tau)
+N_tau = 91
+tau = np.logspace(-4, 4, N_tau)
 
 # Angular grid (Gauss-Legendre quadrature)
-N_mu = 12
+N_mu = 16
 mu, w_mu = np.polynomial.legendre.leggauss(N_mu)
 
 # Frequency grid (Doppler line profile)
-N_nu = 81
+N_nu = 121
 x_nu = np.linspace(-5, 5, N_nu)  # Frequency in Doppler widths
 phi_nu = doppler_profile(x_nu)   # Gaussian profile φ(x) = exp(-x²)/√π
 phi_nu /= np.trapezoid(phi_nu, x_nu)  # Normalize: ∫φ(x)dx = 1
@@ -50,7 +50,7 @@ S = {
 # Main iteration loop
 # =============================================================================
 
-n_iter = 150
+n_iter = 50 # for ~ 50, there is a dip, for ~ 100 it already dissapears
 for it in range(n_iter):
 
     S_old = {k: v.copy() for k, v in S.items()}
@@ -95,15 +95,20 @@ for it in range(n_iter):
         J20_mu = np.zeros(N_tau)
         
         dx_nu = x_nu[1] - x_nu[0]  # Frequency grid spacing
-        
+        I_store = np.zeros((N_tau, N_nu))
+        Q_store = np.zeros((N_tau, N_nu))
         for n in range(N_nu):
             # In complete frequency redistribution, optical depth is frequency-independent
             # (resonance line scattering redistributes frequencies)
-            tau_eff = tau * phi_nu[n]  # Effective optical depth at this frequency
+            tau_eff = tau * phi_nu[n]   # Effective optical depth at this frequency
             
             # Solve transfer equations: dI/dτ = S_I - I, dQ/dτ = S_Q - Q
             I_sc = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary)
             Q_sc = short_characteristics(tau_eff, S_Q_mu, mu_m, Q_boundary)
+
+            # Store full spectra
+            I_store[:, n] = I_sc
+            Q_store[:, n] = Q_sc
 
             # Store solutions (only for m=0 upward ray for emergent evaluation)
             if m == 0 and mu_m > 0:
@@ -114,8 +119,11 @@ for it in range(n_iter):
             # Accumulate moment contributions weighted by Doppler profile
             # and frequency step (trapezoidal integration)
             # ================================================================
-            J00_mu += phi_nu[n] * dx_nu * I_sc
-            J20_mu += phi_nu[n] * dx_nu * (P2 * I_sc + 3*(mu_m**2 - 1) * Q_sc)
+            J00_mu = np.trapezoid(phi_nu * I_store, x_nu, axis=1)
+            J20_mu = np.trapezoid(
+                phi_nu * (P2 * I_store + 3*(mu_m**2 - 1) * Q_store),
+                x_nu,
+                axis=1)
 
             J00_nu[:, n] += 0.5 * w_m * phi_nu[n] * dx_nu * I_sc
             J20_nu[:, n] += (1/(4*np.sqrt(2))) * w_m * phi_nu[n] * dx_nu * (P2 * I_sc + 3*(mu_m**2 - 1) * Q_sc)
@@ -129,13 +137,14 @@ for it in range(n_iter):
         J00 += 0.5 * w_m * J00_mu
         J20 += (1/(4*np.sqrt(2))) * w_m * J20_mu
 
+
     # =========================================================================
     # Statistical equilibrium update (Eq. 1-2 from paper)
     # =========================================================================
     # S^0_0 = (1-ε)J^0_0 + ε B  [source = non-LTE intensity + LTE correction]
     # S^0_2 = (1-ε)J^0_2        [alignment decays to zero at depth]
     S[(0,0)] = (1 - epsilon) * J00 + epsilon * B
-    S[(2,0)] = (1 - epsilon) * J20 * H2
+    S[(2,0)] = (1 - epsilon) * J20 / ( 1 + H2 )
 
     # Bottom boundary condition: enforce isotropy deep in atmosphere
     # ρ^0_2 → 0 as τ → ∞ (populations equalize at high density)
@@ -221,3 +230,168 @@ plt.grid()
 plt.show()
 
 
+# Frequency-dependent code
+
+# =============================================================================
+# 1D Resonance Line Polarization with Tensor Density Matrix (CRD)
+# Frequency-resolved radiation field → frequency-resolved source function
+# =============================================================================
+
+# Optical depth grid
+N_tau = 91
+tau = np.logspace(-4, 4, N_tau)
+
+# Angular grid
+N_mu = 16
+mu, w_mu = np.polynomial.legendre.leggauss(N_mu)
+
+# Frequency grid
+N_nu = 121
+x_nu = np.linspace(-5, 5, N_nu)
+phi_nu = doppler_profile(x_nu)
+phi_nu /= np.trapezoid(phi_nu, x_nu)
+
+# Parameters
+epsilon = 1e-4
+B = 1.0
+H2 = 1.0
+
+# Initial source functions
+S = {
+    (0,0): np.ones(N_tau) * B,
+    (2,0): np.zeros(N_tau)
+}
+
+# =============================================================================
+# ITERATION LOOP
+# =============================================================================
+
+n_iter = 50
+
+for it in range(n_iter):
+
+    S_old = {k: v.copy() for k, v in S.items()}
+
+    # -------------------------------------------------------------
+    # Frequency-resolved radiation field
+    # -------------------------------------------------------------
+    J00_nu = np.zeros((N_tau, N_nu))
+    J20_nu = np.zeros((N_tau, N_nu))
+
+    # -------------------------------------------------------------
+    # Frequency-resolved source function contributions
+    # -------------------------------------------------------------
+    S0_nu = np.zeros((N_tau, N_nu))
+    S2_nu = np.zeros((N_tau, N_nu))
+
+    # =============================================================
+    # ANGULAR LOOP
+    # =============================================================
+    for m in range(N_mu):
+
+        mu_m = mu[m]
+        w_m = w_mu[m]
+
+        P2 = (3 * mu_m**2 - 1)
+
+        # Tensor source decomposition
+        S_I_mu = S[(0,0)] + (1/np.sqrt(2)) * P2 * S[(2,0)]
+        S_Q_mu = (3/(2*np.sqrt(2))) * (1 - mu_m**2) * S[(2,0)]
+
+        I_boundary = B if mu_m > 0 else 0.0
+        Q_boundary = 0.0
+
+        # =========================================================
+        # FREQUENCY LOOP
+        # =========================================================
+        for n in range(N_nu):
+
+            tau_eff = tau * phi_nu[n]
+
+            I_sc = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary)
+            Q_sc = short_characteristics(tau_eff, S_Q_mu, mu_m, Q_boundary)
+
+            # -----------------------------------------------------
+            # Frequency-resolved J moments
+            # -----------------------------------------------------
+            J00_nu[:, n] += 0.5 * w_m * I_sc
+
+            J20_nu[:, n] += (1/(4*np.sqrt(2))) * w_m * (
+                (3*mu_m**2 - 1) * I_sc +
+                3*(mu_m**2 - 1) * Q_sc
+            )
+
+    # =============================================================
+    # FREQUENCY-DEPENDENT SOURCE FUNCTION
+    # =============================================================
+
+    S0_nu = (1 - epsilon) * J00_nu + epsilon * B
+    S2_nu = (1 - epsilon) * J20_nu / (1 + H2)
+
+    # =============================================================
+    # COLLAPSE TO PHYSICAL SOURCE FUNCTION
+    # =============================================================
+
+    S[(0,0)] = np.trapezoid(phi_nu * S0_nu, x_nu, axis=1)
+    S[(2,0)] = np.trapezoid(phi_nu * S2_nu, x_nu, axis=1)
+
+    # enforce boundary condition
+    S[(2,0)][-1] = 0.0
+
+    # =============================================================
+    # CONVERGENCE
+    # =============================================================
+
+    diff = max(
+        np.max(np.abs(S[(0,0)] - S_old[(0,0)])),
+        np.max(np.abs(S[(2,0)] - S_old[(2,0)]))
+    )
+
+    print(f"Iter {it}: error = {diff:.3e}")
+
+    if diff < 1e-6:
+        print(f"Converged in {it} iterations")
+        break
+
+# =============================================================================
+# POSTPROCESSING
+# =============================================================================
+
+anisotropy = S[(2,0)] / (S[(0,0)] + 1e-12)
+
+# emergent intensity
+I_emerge = np.zeros(N_mu)
+Q_emerge = np.zeros(N_mu)
+
+for m in range(N_mu):
+
+    mu_m = mu[m]
+
+    T_I = (1/np.sqrt(2)) * (3*mu_m**2 - 1)
+    T_Q = (3/(2*np.sqrt(2))) * (1 - mu_m**2)
+
+    I_emerge[m] = S[(0,0)][0] + T_I * S[(2,0)][0]
+    Q_emerge[m] = T_Q * S[(2,0)][0]
+
+Q_over_I = Q_emerge / (I_emerge + 1e-12)
+
+# =============================================================================
+# OUTPUT
+# =============================================================================
+
+print("--------------------------------------")
+print(f"Surface anisotropy = {anisotropy[0]:.6e}")
+print(f"Max Q/I = {np.max(np.abs(Q_over_I))*100:.3f}%")
+print("--------------------------------------")
+
+# =============================================================================
+# PLOTS
+# =============================================================================
+
+plt.figure(figsize=(6,5))
+plt.semilogx(tau, anisotropy, '-o')
+plt.xlabel("Optical depth τ")
+plt.ylabel(r"$J^0_2 / J^0_0$")
+plt.title("Anisotropy (frequency-resolved source method)")
+plt.grid()
+plt.show()
