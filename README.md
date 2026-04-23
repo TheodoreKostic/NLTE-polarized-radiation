@@ -25,5 +25,5 @@ for polarized radiation field due to presence of magnetic field.
 <ul>
   <li> Q/I is relatively small, but not zero. </li>
   <li> Added ALI option in <it>functions_prt.py</it>. </li>
-  <li> Frequency-resolved radiation field → frequency-resolved source function, but ALI is causing issues when trying to solve polarized radiative transfer. </li>
+  <li> Frequency-resolved radiation field → frequency-resolved source function, but ALI is causing issues when trying to solve polarized radiative transfer (seems SC function needs work). </li>
 </ul>
