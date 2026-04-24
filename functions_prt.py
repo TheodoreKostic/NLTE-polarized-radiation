@@ -84,10 +84,7 @@ def short_characteristics(tau, S, mu, I_boundary, ali = False):
     I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d]
     L[d] = psi0
 
-    if not ali:
-        return I
-    else:
-        return I, L
+    return I, L
 
 # -----------------------
 # TENSOR COMPUTATION

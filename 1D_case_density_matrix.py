@@ -103,8 +103,8 @@ for it in range(n_iter):
             tau_eff = tau * phi_nu[n]   # Effective optical depth at this frequency
             
             # Solve transfer equations: dI/dτ = S_I - I, dQ/dτ = S_Q - Q
-            I_sc = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary)
-            Q_sc = short_characteristics(tau_eff, S_Q_mu, mu_m, Q_boundary)
+            I_sc, _ = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary, ali=False)
+            Q_sc, _ = short_characteristics(tau_eff, S_Q_mu, mu_m, Q_boundary, ali=False)
 
             # Store full spectra
             I_store[:, n] = I_sc
@@ -308,8 +308,8 @@ for it in range(n_iter):
 
             tau_eff = tau * phi_nu[n]
 
-            I_sc = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary)
-            Q_sc = short_characteristics(tau_eff, S_Q_mu, mu_m, Q_boundary)
+            I_sc, _ = short_characteristics(tau_eff, S_I_mu, mu_m, I_boundary, ali=False)
+            Q_sc, _ = short_characteristics(tau_eff, S_Q_mu, mu_m, Q_boundary, ali=False)
 
             # -----------------------------------------------------
             # Frequency-resolved J moments
@@ -401,9 +401,10 @@ plt.show()
 # Uses TRUE diagonal Lambda* from short_characteristics_ALI()
 # =============================================================================
 
-# ----------------------------
-# grids
-# ----------------------------
+# =============================================================================
+# GRID SETUP
+# =============================================================================
+
 N_tau = 91
 tau = np.logspace(-4, 4, N_tau)
 
@@ -416,45 +417,45 @@ x_nu = np.linspace(-5, 5, N_nu)
 phi_nu = doppler_profile(x_nu)
 phi_nu /= np.trapezoid(phi_nu, x_nu)
 
-# ----------------------------
-# parameters
-# ----------------------------
+# =============================================================================
+# PHYSICAL PARAMETERS
+# =============================================================================
+
 epsilon = 1e-4
 B = 1.0
 H2 = 1.0
 
-# ----------------------------
-# initial source functions
-# ----------------------------
+# =============================================================================
+# INITIAL CONDITIONS
+# =============================================================================
+
 S = {
     (0,0): np.ones(N_tau) * B,
     (2,0): np.zeros(N_tau)
 }
 
 # =============================================================================
-# MAIN ITERATION LOOP
+# MAIN ALI ITERATION
 # =============================================================================
 
-n_iter = 50
+n_iter = 1000
+tol = 1e-6
+eps_denom = 1e-10
+force_S20_bottom_zero = True
 
 for it in range(n_iter):
 
     S_old = {k: v.copy() for k, v in S.items()}
 
-    # ----------------------------------------
-    # radiation field
-    # ----------------------------------------
-    J00_nu = np.zeros((N_tau, N_nu))
-    J20_nu = np.zeros((N_tau, N_nu))
+    J00 = np.zeros(N_tau)
+    J20 = np.zeros(N_tau)
 
-    # ----------------------------------------
-    # TRUE diagonal Lambda*
-    # ----------------------------------------
-    Lambda_star = np.zeros(N_tau)
+    Lambda00 = np.zeros(N_tau)
+    Lambda20 = np.zeros(N_tau)
 
-    # ============================================================
-    # ANGULAR LOOP
-    # ============================================================
+    # =====================================================================
+    # ANGLE LOOP
+    # =====================================================================
     for m in range(N_mu):
 
         mu_m = mu[m]
@@ -462,96 +463,144 @@ for it in range(n_iter):
 
         P2 = (3 * mu_m**2 - 1)
 
-        # tensor source decomposition
+        # Source functions
         S_I_mu = S[(0,0)] + (1/np.sqrt(2)) * P2 * S[(2,0)]
         S_Q_mu = (3/(2*np.sqrt(2))) * (1 - mu_m**2) * S[(2,0)]
 
         I_boundary = B if mu_m > 0 else 0.0
+        Q_boundary = 0.0
 
-        # ========================================================
+        # Storage over frequency
+        I_store = np.zeros((N_tau, N_nu))
+        Q_store = np.zeros((N_tau, N_nu))
+        L_I_store = np.zeros((N_tau, N_nu))
+        L_Q_store = np.zeros((N_tau, N_nu))
+
+        # Chain rule factors (fixed per μ)
+        a = (1/np.sqrt(2)) * P2
+        b = (3/(2*np.sqrt(2))) * (1 - mu_m**2)
+
+        # =================================================================
         # FREQUENCY LOOP
-        # ========================================================
+        # =================================================================
         for n in range(N_nu):
 
-            # frequency-dependent optical depth
-            tau_eff = tau * phi_nu[n]
+            phi = phi_nu[n]
+            tau_eff = tau * phi
 
-            # ----------------------------------------------------
-            # SHORT CHARACTERISTICS ALI SOLVER
-            # returns:
-            # I_sc = intensity
-            # L    = psi0 = LOCAL RESPONSE (diagonal Λ kernel)
-            # ----------------------------------------------------
-            I_sc, L = short_characteristics(
-                tau_eff,
-                S_I_mu,
-                mu_m,
-                I_boundary,
-                ali=True
+            I_sc, L_I = short_characteristics(
+                tau_eff, S_I_mu, mu_m, I_boundary, ali=True
             )
 
-            # ----------------------------------------------------
-            # radiation field tensors
-            # ----------------------------------------------------
-            J00_nu[:, n] += 0.5 * w_m * I_sc
-
-            J20_nu[:, n] += (1/(4*np.sqrt(2))) * w_m * (
-                P2 * I_sc + 3*(mu_m**2 - 1) * S_Q_mu
+            Q_sc, L_Q = short_characteristics(
+                tau_eff, S_Q_mu, mu_m, Q_boundary, ali=True
             )
 
-            # ----------------------------------------------------
-            # BUILD TRUE Λ* (core of ALI)
-            # ----------------------------------------------------
-            Lambda_star += 0.5 * w_m * L
+            I_store[:, n] = I_sc
+            Q_store[:, n] = Q_sc
+            L_I_store[:, n] = L_I
+            L_Q_store[:, n] = L_Q
 
-    # ============================================================
-    # frequency integration
-    # ============================================================
-    J00 = np.trapezoid(phi_nu * J00_nu, x_nu, axis=1)
-    J20 = np.trapezoid(phi_nu * J20_nu, x_nu, axis=1)
+        # =================================================================
+        # FREQUENCY INTEGRATION (ONLY ONCE — CORRECT)
+        # =================================================================
 
-    # ============================================================
-    # statistical equilibrium RHS
-    # ============================================================
-    R00 = (1 - epsilon) * J00 + epsilon * B
+        J00_mu = np.trapezoid(
+            phi_nu[None, :] * I_store,
+            x_nu,
+            axis=1
+        )
 
-    # ============================================================
-    # FINAL ALI UPDATE (true operator splitting)
-    # ============================================================
-    den = 1.0 - (1 - epsilon) * Lambda_star
-    den = np.maximum(den, 0.3)
-    S[(0,0)] = R00 / den
+        J20_mu = np.trapezoid(
+            phi_nu[None, :] * (
+                P2 * I_store + 3*(mu_m**2 - 1) * Q_store
+            ),
+            x_nu,
+            axis=1
+        )
 
-    # polarization is NOT inverted with Λ*
-    S[(2,0)] = (1 - epsilon) * J20 / (1 + H2)
+        Lambda00_mu = np.trapezoid(
+            phi_nu[None, :] * L_I_store,
+            x_nu,
+            axis=1
+        )
 
-    # enforce physical boundary condition
-    S[(2,0)][-1] = 0.0
+        Lambda20_mu = np.trapezoid(
+            phi_nu[None, :] * (
+                P2 * (a * L_I_store) +
+                3*(mu_m**2 - 1) * (b * L_Q_store)
+            ),
+            x_nu,
+            axis=1
+        )
 
-    # ============================================================
-    # convergence check
-    # ============================================================
-    diff = max(
-        np.max(np.abs(S[(0,0)] - S_old[(0,0)])),
-        np.max(np.abs(S[(2,0)] - S_old[(2,0)]))
+        # =================================================================
+        # ANGULAR INTEGRATION
+        # =================================================================
+
+        J00 += 0.5 * w_m * J00_mu
+        J20 += (1/(4*np.sqrt(2))) * w_m * J20_mu
+
+        Lambda00 += 0.5 * w_m * Lambda00_mu
+        Lambda20 += (1/(4*np.sqrt(2))) * w_m * Lambda20_mu
+
+    # =====================================================================
+    # ALI UPDATE
+    # =====================================================================
+
+    J00_eff = J00 - Lambda00 * S_old[(0,0)]
+    J20_eff = J20 - Lambda20 * S_old[(2,0)]
+
+    denom00 = 1.0 - (1 - epsilon) * Lambda00
+    denom00 = np.where(np.abs(denom00) < eps_denom, eps_denom, denom00)
+
+    S[(0,0)] = ((1 - epsilon) * J00_eff + epsilon * B) / denom00
+
+    denom20 = 1.0 - (1 - epsilon) * Lambda20 / (1 + H2)
+    denom20 = np.where(np.abs(denom20) < eps_denom, eps_denom, denom20)
+
+    S[(2,0)] = ((1 - epsilon) * J20_eff / (1 + H2)) / denom20
+
+    if force_S20_bottom_zero:
+        S[(2,0)][-1] = 0.0
+
+    # =====================================================================
+    # CONVERGENCE
+    # =====================================================================
+
+    rel00 = np.max(
+        np.abs((S[(0,0)] - S_old[(0,0)]) / (S_old[(0,0)] + 1e-12))
     )
 
-    print(f"Iter {it}: error = {diff:.3e}")
+    rel20 = np.max(
+        np.abs(S[(2,0)] - S_old[(2,0)])
+    )
 
-    if diff < 1e-6:
-        print("Converged")
+    diff = max(rel00, rel20)
+
+    print(f"Iter {it}: err = {diff:.3e}")
+
+    if diff < tol:
+        print(f"Converged in {it} iterations")
         break
 
 # =============================================================================
-# POSTPROCESSING
+# DIAGNOSTICS
 # =============================================================================
 
-anisotropy = S[(2,0)] / (S[(0,0)] + 1e-12)
+anisotropy = J20 / (J00 + 1e-12)
 
-# emergent Stokes
+plt.figure(figsize=(6,5))
+plt.semilogx(tau, anisotropy, '-o')
+plt.xlabel("Optical depth τ")
+plt.ylabel(r"$J^0_2 / J^0_0$")
+plt.title("Anisotropy vs Depth (ALI)")
+plt.grid()
+plt.show()
+
+# Emergent Stokes parameters
 I_emerge = np.zeros(N_mu)
 Q_emerge = np.zeros(N_mu)
-
 for m in range(N_mu):
 
     mu_m = mu[m]
@@ -560,27 +609,9 @@ for m in range(N_mu):
     T_Q = (3/(2*np.sqrt(2))) * (1 - mu_m**2)
 
     I_emerge[m] = S[(0,0)][0] + T_I * S[(2,0)][0]
-    Q_emerge[m] = T_Q * S[(2,0)][0]
-
+    Q_emerge[m] = T_Q * S[(2,0)][0] 
 Q_over_I = Q_emerge / (I_emerge + 1e-12)
-
-# =============================================================================
-# OUTPUT
-# =============================================================================
-
 print("--------------------------------------")
-print(f"Surface anisotropy: {anisotropy[0]:.6e}")
-print(f"Max Q/I (%): {np.max(np.abs(Q_over_I))*100:.3f}")
-print("--------------------------------------")
-
-# =============================================================================
-# PLOT
-# =============================================================================
-
-plt.figure(figsize=(6,5))
-plt.semilogx(tau, anisotropy, '-o')
-plt.xlabel("Optical depth τ")
-plt.ylabel(r"$J^2_0 / J^0_0$")
-plt.title("FINAL ALI with true Λ* from SC kernel")
-plt.grid()
-plt.show()
+print(f"Surface anisotropy = {anisotropy[0]*100:.3f}%")
+print(f"Max Q/I = {np.max(np.abs(Q_over_I))*100:.3f}%")
+print("--------------------------------------") 
