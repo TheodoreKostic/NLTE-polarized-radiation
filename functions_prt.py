@@ -141,3 +141,16 @@ def compute_tensors(mu, chi):
     T[('U','2s')] = -np.sqrt(3)/2 * mu * cos2
 
     return T
+
+def hanle_matrix(Gamma, theta_B, chi_B):
+    """
+    Compute 5x5 Hanle matrix for quadrupole components.
+    Gamma = B / (Gamma_rad * sqrt(1 + (Gamma_col/Gamma_rad)^2))  # dimensionless field strength
+    theta_B, chi_B: magnetic field orientation angles
+    Returns matrix H such that rho^2_q_new = H @ rho^2_q_old
+    """
+    # Simplified for weak field; full implementation needs rotation matrices
+    # For now, use identity for zero field; expand for general case
+    H = np.eye(5)  # Placeholder: implement full matrix from paper
+    # TODO: Implement based on paper Eq. (28)-(30)
+    return H
