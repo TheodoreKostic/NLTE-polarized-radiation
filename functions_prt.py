@@ -154,3 +154,80 @@ def hanle_matrix(Gamma, theta_B, chi_B):
     H = np.eye(5)  # Placeholder: implement full matrix from paper
     # TODO: Implement based on paper Eq. (28)-(30)
     return H
+
+def wigner_d2(theta):
+
+    c = np.cos(theta)
+    s = np.sin(theta)
+
+    d = np.zeros((5,5), dtype=complex)
+
+    Qs = [-2,-1,0,1,2]
+
+    # indexing helper
+    def idx(q):
+        return q + 2
+
+    # Explicit formulas
+
+    d[idx(2),idx(2)] = (1+c)**2 / 4
+    d[idx(2),idx(1)] = -(1+c)*s / 2
+    d[idx(2),idx(0)] = np.sqrt(6)/4 * s**2
+    d[idx(2),idx(-1)] = -(1-c)*s / 2
+    d[idx(2),idx(-2)] = (1-c)**2 / 4
+
+    d[idx(1),idx(2)] = (1+c)*s / 2
+    d[idx(1),idx(1)] = (2*c**2 + c -1)/2
+    d[idx(1),idx(0)] = -np.sqrt(6)/2 * s*c
+    d[idx(1),idx(-1)] = (2*c**2 - c -1)/2
+    d[idx(1),idx(-2)] = -(1-c)*s / 2
+
+    d[idx(0),idx(2)] = np.sqrt(6)/4 * s**2
+    d[idx(0),idx(1)] = np.sqrt(6)/2 * s*c
+    d[idx(0),idx(0)] = (3*c**2 -1)/2
+    d[idx(0),idx(-1)] = -np.sqrt(6)/2 * s*c
+    d[idx(0),idx(-2)] = np.sqrt(6)/4 * s**2
+
+    # symmetry relations
+    for q in Qs:
+        for qp in Qs:
+            if d[idx(q),idx(qp)] == 0:
+                d[idx(q),idx(qp)] = (
+                    (-1)**(q-qp)
+                    * d[idx(-q),idx(-qp)]
+                )
+
+    return d
+
+
+def rotate_to_magnetic_frame(J_vert, theta_B, chi_B):
+
+    d2 = wigner_d2(theta_B)
+
+    J_mag = {Q: 0 for Q in [-2,-1,0,1,2]}
+
+    for Q in J_mag:
+
+        for Qp in J_mag:
+
+            phase = np.exp(-1j * Qp * chi_B)
+
+            J_mag[Q] += d2[Q, Qp] * phase * J_vert[Qp]
+
+    return J_mag
+
+def rotate_to_vertical_frame(S_mag, theta_B, chi_B):
+
+    d2 = wigner_d2(theta_B)
+
+    S_vert = {Q: 0 for Q in S_mag}
+
+    for Q in S_mag:
+
+        for Qp in S_mag:
+
+            phase = np.exp(+1j * Q * chi_B)
+
+            S_vert[Q] += d2[Qp, Q] * phase * S_mag[Qp]
+
+    return S_vert
