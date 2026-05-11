@@ -84,7 +84,7 @@ def short_characteristics(tau, S, mu, I_boundary, ali = False):
     I[d] = I[d-step]*expd + psiu*S[d-step] + psi0*S[d]
     L[d] = psi0
 
-    return I, L
+    return np.stack((I, L))
 
 # -----------------------
 # TENSOR COMPUTATION
@@ -142,18 +142,64 @@ def compute_tensors(mu, chi):
 
     return T
 
-def hanle_matrix(Gamma, theta_B, chi_B):
+Qvals = np.array([-2, -1, 0, 1, 2])
+
+def T2_emissivity_tensors(mu, chi):
     """
-    Compute 5x5 Hanle matrix for quadrupole components.
-    Gamma = B / (Gamma_rad * sqrt(1 + (Gamma_col/Gamma_rad)^2))  # dimensionless field strength
-    theta_B, chi_B: magnetic field orientation angles
-    Returns matrix H such that rho^2_q_new = H @ rho^2_q_old
+    Returns irreducible emissivity tensors T^2_Q for Stokes I,Q,U
+    in array form.
+
+    Output:
+        TI[5], TQ[5], TU[5]
+        index = Q + 2
     """
-    # Simplified for weak field; full implementation needs rotation matrices
-    # For now, use identity for zero field; expand for general case
-    H = np.eye(5)  # Placeholder: implement full matrix from paper
-    # TODO: Implement based on paper Eq. (28)-(30)
-    return H
+
+    sin_t = np.sqrt(1 - mu**2)
+    cos_chi = np.cos(chi)
+    sin_chi = np.sin(chi)
+    cos2 = np.cos(2 * chi)
+    sin2 = np.sin(2 * chi)
+
+    TI = np.zeros(5)
+    TQ = np.zeros(5)
+    TU = np.zeros(5)
+
+    # -----------------------------
+    # Q = 0
+    # -----------------------------
+    TI[2] = (1/(2*np.sqrt(2))) * (3*mu**2 - 1)
+    TQ[2] = (3/(2*np.sqrt(2))) * (1 - mu**2)
+    TU[2] = 0.0
+
+    # -----------------------------
+    # Q = ±1
+    # -----------------------------
+    f1 = (np.sqrt(3)/2) * mu * sin_t
+
+    TI[1] = -f1 * cos_chi   # Q = -1
+    TI[3] = -f1 * cos_chi   # Q = +1
+
+    TQ[1] = -f1 * cos_chi
+    TQ[3] = -f1 * cos_chi
+
+    TU[1] = -(np.sqrt(3)/2) * sin_t * sin_chi
+    TU[3] =  (np.sqrt(3)/2) * sin_t * sin_chi
+
+    # -----------------------------
+    # Q = ±2
+    # -----------------------------
+    f2 = (np.sqrt(3)/4) * (1 - mu**2)
+
+    TI[0] = f2 * cos2      # Q = -2
+    TI[4] = f2 * cos2      # Q = +2
+
+    TQ[0] = -(np.sqrt(3)/4) * (1 + mu**2) * cos2
+    TQ[4] = -(np.sqrt(3)/4) * (1 + mu**2) * cos2
+
+    TU[0] =  (np.sqrt(3)/2) * mu * sin2
+    TU[4] = -(np.sqrt(3)/2) * mu * cos2
+
+    return TI, TQ, TU
 
 def wigner_d2(theta):
 
@@ -231,3 +277,216 @@ def rotate_to_vertical_frame(S_mag, theta_B, chi_B):
             S_vert[Q] += d2[Qp, Q] * phase * S_mag[Qp]
 
     return S_vert
+
+#-------------------------------------------------------------------------
+# Additional functions for handling the density matrix and Hanle effect
+Qvals = np.array([-2, -1, 0, 1, 2])
+
+def qindex(Q):
+    return Q + 2
+
+def wigner_d2_arr(theta):
+
+    c = np.cos(theta)
+    s = np.sin(theta)
+
+    d = np.zeros((5,5), dtype=complex)
+
+    iq = qindex
+
+    # Row Q, column Q'
+
+    d[iq(2),iq(2)] = (1+c)**2/4
+    d[iq(2),iq(1)] = -(1+c)*s/2
+    d[iq(2),iq(0)] = np.sqrt(6)/4*s**2
+    d[iq(2),iq(-1)] = -(1-c)*s/2
+    d[iq(2),iq(-2)] = (1-c)**2/4
+
+    d[iq(1),iq(2)] = (1+c)*s/2
+    d[iq(1),iq(1)] = (2*c**2+c-1)/2
+    d[iq(1),iq(0)] = -np.sqrt(6)/2*s*c
+    d[iq(1),iq(-1)] = (2*c**2-c-1)/2
+    d[iq(1),iq(-2)] = -(1-c)*s/2
+
+    d[iq(0),iq(2)] = np.sqrt(6)/4*s**2
+    d[iq(0),iq(1)] = np.sqrt(6)/2*s*c
+    d[iq(0),iq(0)] = (3*c**2-1)/2
+    d[iq(0),iq(-1)] = -np.sqrt(6)/2*s*c
+    d[iq(0),iq(-2)] = np.sqrt(6)/4*s**2
+
+    # symmetry
+    for Q in Qvals:
+        for Qp in Qvals:
+
+            i = iq(Q)
+            j = iq(Qp)
+
+            if d[i,j] == 0:
+
+                d[i,j] = (
+                    (-1.0)**(Q-Qp)
+                    * d[iq(-Q),iq(-Qp)]
+                )
+
+    return d
+
+# TENSOR
+def rotate_tensor_to_magnetic_frame(S2, theta_B, chi_B):
+
+    d2 = wigner_d2(theta_B)
+
+    S2_mag = np.zeros_like(S2)
+
+    for iQ, Q in enumerate(Qvals):
+
+        for iQp, Qp in enumerate(Qvals):
+
+            phase = np.exp(-1j * Qp * chi_B)
+
+            S2_mag[iQ] += (
+                d2[iQ, iQp]
+                * phase
+                * S2[iQp]
+            )
+
+    return S2_mag
+
+def rotate_to_magnetic_frame_arr(J2, theta_B, chi_B):
+
+    d2 = wigner_d2_arr(theta_B)
+
+    Jmag = np.zeros(5, dtype=complex)
+
+    for Q in Qvals:
+
+        iQ = qindex(Q)
+
+        for Qp in Qvals:
+
+            iQp = qindex(Qp)
+
+            phase = np.exp(-1j * Qp * chi_B)
+
+            Jmag[iQ] += (
+                d2[iQ, iQp]
+                * phase
+                * J2[iQp]
+            )
+
+    return Jmag
+
+# TENSOR
+def rotate_tensor_to_vertical_frame(S2_mag, theta_B, chi_B):
+
+    d2 = wigner_d2(theta_B)
+
+    S2_vert = np.zeros_like(S2_mag)
+
+    for iQ, Q in enumerate(Qvals):
+
+        for iQp, Qp in enumerate(Qvals):
+
+            phase = np.exp(+1j * Q * chi_B)
+
+            S2_vert[iQ] += (
+                d2[iQp, iQ]
+                * phase
+                * S2_mag[iQp]
+            )
+
+    return S2_vert
+
+def rotate_to_vertical_frame_arr(Smag, theta_B, chi_B):
+
+    d2 = wigner_d2_arr(theta_B)
+
+    Svert = np.zeros(5, dtype=complex)
+
+    for Q in Qvals:
+
+        iQ = qindex(Q)
+
+        for Qp in Qvals:
+
+            iQp = qindex(Qp)
+
+            phase = np.exp(+1j * Q * chi_B)
+
+            Svert[iQ] += (
+                d2[iQp, iQ]
+                * phase
+                * Smag[iQp]
+            )
+
+    return Svert
+
+# TENSOR
+def apply_hanle_effect(S2, Gamma, theta_B, chi_B):
+
+    # rotate to magnetic frame
+    S2_mag = rotate_tensor_to_magnetic_frame(
+        S2,
+        theta_B,
+        chi_B
+    )
+
+    # Hanle operator
+    for iQ, Q in enumerate(Qvals):
+
+        S2_mag[iQ] /= (1 + 1j * Gamma * Q)
+
+    # rotate back
+    S2_vert = rotate_tensor_to_vertical_frame(
+        S2_mag,
+        theta_B,
+        chi_B
+    )
+
+    return S2_vert
+
+def hanle_operator_full(J2, Gamma, theta_B, chi_B):
+
+    N_tau = J2.shape[1]
+
+    S2 = np.zeros_like(J2)
+
+    for t in range(N_tau):
+
+        # -----------------------------------
+        # 1. rotate to magnetic frame
+        # -----------------------------------
+
+        Jmag = rotate_to_magnetic_frame_arr(
+            J2[:,t],
+            theta_B,
+            chi_B
+        )
+
+        # -----------------------------------
+        # 2. Hanle effect in magnetic frame
+        # -----------------------------------
+
+        Smag = np.zeros(5, dtype=complex)
+
+        for Q in Qvals:
+
+            iQ = qindex(Q)
+
+            Smag[iQ] = (
+                Jmag[iQ]
+                / (1 + 1j * Gamma * Q)
+            )
+
+        # -----------------------------------
+        # 3. rotate back
+        # -----------------------------------
+
+        Svert = rotate_to_vertical_frame_arr(
+            Smag,
+            theta_B,
+            chi_B
+        )
+
+        S2[:,t] = Svert
+
+    return S2
