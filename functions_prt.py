@@ -142,18 +142,115 @@ def compute_tensors(mu, chi):
 
     return T
 
-def hanle_matrix(Gamma, theta_B, chi_B):
+def hanle_matrix_magnetic_frame(Gamma_rad, Gamma_col, omega_L):
     """
-    Compute 5x5 Hanle matrix for quadrupole components.
-    Gamma = B / (Gamma_rad * sqrt(1 + (Gamma_col/Gamma_rad)^2))  # dimensionless field strength
-    theta_B, chi_B: magnetic field orientation angles
-    Returns matrix H such that rho^2_q_new = H @ rho^2_q_old
+    Full Hanle matrix in MAGNETIC FRAME (irreducible tensor formalism).
+    
+    In the magnetic frame, the matrix is diagonal with Q-dependent depolarization rates.
+    
+    Parameters:
+    -----------
+    Gamma_rad : float
+        Natural decay rate (A_ul)
+    Gamma_col : float
+        Collisional broadening rate
+    omega_L : float
+        Larmor precession frequency = g * mu_B * B / hbar
+    
+    Returns:
+    --------
+    H : 5x5 complex array
+        Hanle matrix in magnetic frame [Q=-2, -1, 0, 1, 2]
+        Acts on density matrix components: rho^2_q_new = H @ rho^2_q_old
+    
+    Notes:
+    ------
+    In the magnetic frame, the statistical equilibrium equation is:
+        dρ^K_Q/dt = -[Γ_total + i·Q·ω_L]·ρ^K_Q
+    
+    where:
+    - Γ_total = Gamma_rad + Gamma_col (total damping)
+    - ω_L is the Larmor precession frequency
+    - Q is the component index (-2, -1, 0, 1, 2)
+    
+    The solution is: ρ^K_Q_new = ρ^K_Q_old / (1 + i·Q·Γ)
+    where Γ = ω_L / Gamma_total (dimensionless Hanle parameter)
     """
-    # Simplified for weak field; full implementation needs rotation matrices
-    # For now, use identity for zero field; expand for general case
-    H = np.eye(5)  # Placeholder: implement full matrix from paper
-    # TODO: Implement based on paper Eq. (28)-(30)
+    
+    # Total damping rate
+    Gamma_total = Gamma_rad + Gamma_col
+    
+    # Dimensionless Hanle parameter
+    Gamma_H = omega_L / Gamma_total  # Can be complex if Gamma_col is complex
+    
+    # Q values in order: [-2, -1, 0, 1, 2]
+    Qs = np.array([-2, -1, 0, 1, 2])
+    
+    # Hanle depolarization matrix (diagonal in magnetic frame)
+    H = np.zeros((5, 5), dtype=complex)
+    
+    for i, Q in enumerate(Qs):
+        # Each diagonal element accounts for Hanle rotation + depolarization
+        # The denominator (1 + i·Q·Γ_H) comes from solving the equation of motion
+        H[i, i] = 1.0 / (1.0 + 1j * Q * Gamma_H)
+    
     return H
+
+
+def hanle_matrix_lab_frame(Gamma_rad, Gamma_col, omega_L, theta_B, chi_B):
+    """
+    Full Hanle matrix in LAB FRAME (irreducible tensor formalism).
+    
+    Transforms the diagonal Hanle matrix from magnetic frame back to lab frame
+    using Wigner rotation matrices.
+    
+    Parameters:
+    -----------
+    Gamma_rad : float
+        Natural decay rate (A_ul)
+    Gamma_col : float
+        Collisional broadening rate
+    omega_L : float
+        Larmor precession frequency
+    theta_B : float
+        Magnetic field polar angle
+    chi_B : float
+        Magnetic field azimuthal angle
+    
+    Returns:
+    --------
+    H_lab : 5x5 complex array
+        Hanle matrix in lab frame
+    
+    Operation sequence:
+    1. Rotate to magnetic frame: rho_mag = D^† · rho_lab
+    2. Apply Hanle in magnetic frame: rho_mag_new = H_mag · rho_mag
+    3. Rotate back to lab frame: rho_lab_new = D · rho_mag_new · D^†
+    """
+    
+    # Get diagonal Hanle matrix in magnetic frame
+    H_mag = hanle_matrix_magnetic_frame(Gamma_rad, Gamma_col, omega_L)
+    
+    # Wigner d-matrix for K=2
+    d2 = wigner_d2(theta_B)
+    
+    # Rotation matrix to magnetic frame: D(theta_B, chi_B)
+    # In matrix form: D[q, q'] = d2[q, q'] * exp(-i·q'·chi_B)
+    D = np.zeros((5, 5), dtype=complex)
+    Qs = [-2, -1, 0, 1, 2]
+    
+    for i, q in enumerate(Qs):
+        for j, qp in enumerate(Qs):
+            D[i, j] = d2[q, qp] * np.exp(-1j * qp * chi_B)
+    
+    # Inverse rotation: D_inv = D^† (conjugate transpose)
+    D_inv = np.conj(D.T)
+    
+    # Full transformation in lab frame:
+    # H_lab = D^† · H_mag · D
+    H_lab = D_inv @ H_mag @ D
+    
+    return H_lab
 
 def wigner_d2(theta):
 
