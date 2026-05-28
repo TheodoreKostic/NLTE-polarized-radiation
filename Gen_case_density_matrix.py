@@ -9,33 +9,25 @@ from copy import deepcopy
 # General version of the code for the 1D case. It is used to test the density matrix solver.
 # -----------------------------------------------------------------------------/
 
-# # =============================================================================
-# 1D Resonance Line Polarization — FINAL ALI IMPLEMENTATION
-# Uses TRUE diagonal Lambda* from short_characteristics_ALI()
-# =============================================================================
-
 # Local functions
-def irreducible_weights(mu, chi):
-    """
-    Returns geometric tensors T^K_Q for K=0,2 in 1D case.
-    """
+# ----------------
+Qvals = np.array([-2, -1, 0, 1, 2])
+
+def irreducible_weights(mu):
 
     T00 = 1.0
 
-    T20 = 0.5 * (3*mu**2 - 1)
+    T20 = (1/(2*np.sqrt(2))) * (3*mu**2 - 1)
 
-    T22_re = (1 - mu**2) * np.cos(2*chi)
-    T22_im = (1 - mu**2) * np.sin(2*chi)
+    return T00, T20
 
-    return T00, T20, T22_re, T22_im
-
-def compute_radiation_tensor(S):
+def compute_radiation_tensor(S00, S20):
 
     J00 = np.zeros(N_tau)
     J20 = np.zeros(N_tau)
-    J22 = np.zeros(N_tau, dtype=complex)
 
     for m in range(N_mu):
+
 
         mu_m = mu[m]
         w_m = w_mu[m]
@@ -50,7 +42,7 @@ def compute_radiation_tensor(S):
 
             I_store = np.zeros((N_tau, N_nu))
 
-            for n in range(N_nu):
+        for n in range(N_nu):
 
                 tau_eff = tau * phi_nu[n]
                 I_boundary = B if mu_m > 0 else 0.0
@@ -282,7 +274,7 @@ print(f"  H_mag[2,2] (Q= 0): {H_mag[2,2]:.4f}")
 print(f"  H_mag[4,4] (Q=+2): {H_mag[4,4]:.4f}")
 
 # ============================================================
-# ITERATION LOOP
+# SCALAR NLTE ITERATION
 # ============================================================
 
 n_iter = 100
@@ -345,6 +337,7 @@ for it in range(n_iter):
     print(f"Iter {it+1}, err = {err:.2e}")
 
     if err < tol:
+        print("Converged.")
         break
 
 # ============================================================
