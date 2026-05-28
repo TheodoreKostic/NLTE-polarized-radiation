@@ -176,7 +176,7 @@ def hanle_matrix_magnetic_frame(Gamma_rad, Gamma_col, omega_L):
     The solution is: ρ^K_Q_new = ρ^K_Q_old / (1 + i·Q·Γ)
     where Γ = ω_L / Gamma_total (dimensionless Hanle parameter)
     """
-    
+    # WIP
     # Total damping rate
     Gamma_total = Gamma_rad + Gamma_col
     
