@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import sys
 import os
 
+# Add the directory containing functions_prt.py to the Python path
+
 script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 
 sys.path.append(script_dir)
