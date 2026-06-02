@@ -5,7 +5,7 @@ import os
 
 # Add the directory containing functions_prt.py to the Python path
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 
 sys.path.append(script_dir)
 
@@ -68,11 +68,15 @@ def pQ(hR, delta_deg):
 hp = np.linspace(0,0.2,400)
 
 plt.figure(figsize=(8,6))
-for d in [0,10,20,30]:
+for d in [-30, -20, -10, 0,10,20,30]:
 
     hR = (1 + hp)/np.cos(np.radians(d)) - 1
-
-    plt.plot(hp, pQ(hR,d), label=f"$\\delta = {d}°$")
+    if d < 0:
+        plt.plot(hp, pQ(hR,d), linestyle='--', label=f"$\\delta = {d}°$")
+    elif d > 0:
+        plt.plot(hp, pQ(hR,d), linestyle='-.', label=f"$\\delta = {d}°$")
+    else:
+        plt.plot(hp, pQ(hR,d), linestyle='-', label=f"$\\delta = {d}°$")
 
 plt.xlabel(r"$h'/R_\odot$")
 plt.ylabel(r"$p_Q$")
@@ -206,11 +210,15 @@ def pQ_w2(hR, delta_deg):
 hp = np.linspace(0,0.2,400)
 
 plt.figure(figsize=(8,6))
-for d in [0,10,20,30]:
+for d in [-30, -20, -10, 0,10,20,30]:
 
     hR = (1 + hp)/np.cos(np.radians(d)) - 1
-
-    plt.plot(hp, pQ_w2(hR,d), label=f"$\\delta = {d}°$")
+    if d < 0:
+        plt.plot(hp, pQ_w2(hR,d), linestyle='--', label=f"$\\delta = {d}°$")
+    elif d > 0:
+        plt.plot(hp, pQ_w2(hR,d), linestyle='-.', label=f"$\\delta = {d}°$")
+    else:
+        plt.plot(hp, pQ_w2(hR,d), linestyle='-', label=f"$\\delta = {d}°$")
 
 plt.xlabel(r"$h'/R_\odot$")
 plt.ylabel(r"$p_Q$")

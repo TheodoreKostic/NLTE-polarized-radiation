@@ -276,7 +276,7 @@ def wigner_d2(theta):
     d[idx(1),idx(2)] = (1+c)*s / 2
     d[idx(1),idx(1)] = (2*c**2 + c -1)/2
     d[idx(1),idx(0)] = -np.sqrt(6)/2 * s*c
-    d[idx(1),idx(-1)] = (2*c**2 - c -1)/2
+    d[idx(1),idx(-1)] = -(2*c**2 - c -1)/2
     d[idx(1),idx(-2)] = -(1-c)*s / 2
 
     d[idx(0),idx(2)] = np.sqrt(6)/4 * s**2
@@ -288,13 +288,24 @@ def wigner_d2(theta):
     # symmetry relations
     for q in Qs:
         for qp in Qs:
-            if d[idx(q),idx(qp)] == 0:
+            if abs(d[idx(q),idx(qp)]) < 1e-14:
                 d[idx(q),idx(qp)] = (
                     (-1)**(q-qp)
                     * d[idx(-q),idx(-qp)]
                 )
 
     return d
+
+def wigner_D2(alpha, beta, gamma):
+
+    qs = np.array([-2,-1,0,1,2])
+
+    d = wigner_d2(beta)
+
+    left  = np.diag(np.exp(-1j*qs*alpha))
+    right = np.diag(np.exp(-1j*qs*gamma))
+
+    return left @ d @ right
 
 
 def rotate_to_magnetic_frame(J_vert, theta_B, chi_B):
