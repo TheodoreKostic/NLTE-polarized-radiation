@@ -6,7 +6,7 @@ import os
 # Add the directory containing functions_prt.py to the Python path
 
 script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-
+# script_dir = os.path.abspath("/home/teodor/Documents/Code/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import short_characteristics
