@@ -1045,3 +1045,71 @@ for i,Q in enumerate(Qs):
     rhs = np.exp(-1j*0*chi) * wigner_d2(np.pi/2)[2,i]
 
     print(Q, lhs-rhs)
+
+print('--------------------------------')
+Hu = 1e12
+
+theta_B = np.pi/2
+chi_B   = np.radians(45)
+
+D = wigner_D2(chi_B, theta_B, 0)
+
+Jvert = np.zeros(5,dtype=complex)
+Jvert[2] = 1.0
+
+Jmag = D @ Jvert
+
+print("Jmag")
+for q,v in zip([-2,-1,0,1,2], Jmag):
+    print(q,v)
+
+rho_mag = np.zeros(5,dtype=complex)
+rho_mag[2] = Jmag[2]      # ONLY Q=0 survives
+
+print("\nrho_mag")
+for q,v in zip([-2,-1,0,1,2], rho_mag):
+    print(q,v)
+
+rho_vert = D.conj().T @ rho_mag
+
+print("\nrho_vert")
+for q,v in zip([-2,-1,0,1,2], rho_vert):
+    print(q,v)
+
+# Clean test
+print('--------------------------------')
+theta_B = np.pi/2
+chi_B   = np.radians(45)
+D0 = wigner_D2(chi_B, np.pi/2, 0)
+print("D0 @ e0")
+print(D0 @ e0)
+
+print("D0.T @ e0")
+print(D0.T @ e0)
+
+print("D0.conj().T @ e0")
+print(D0.conj().T @ e0)
+
+print('--------------------------------')
+theta_B = np.pi/2
+chi_B   = np.pi/4
+
+D0 = wigner_D2(chi_B, theta_B, 0)
+
+R = D0.conj().T
+
+e0 = np.zeros(5,dtype=complex)
+e0[2] = 1
+
+print("R e0")
+print(R @ e0)
+
+print("R^-1 e0")
+print(R.conj().T @ e0)
+
+D = wigner_D2(chi_B,np.pi/2,0).T
+print("D @ e0")
+print(D @ e0)
+
+print("D.conj().T @ e0")
+print(D.conj().T @ e0)
