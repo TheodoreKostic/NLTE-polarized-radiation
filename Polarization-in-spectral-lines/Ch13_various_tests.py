@@ -5,8 +5,8 @@ import os
 import matplotlib.pyplot as plt
 # Add the directory containing functions_prt.py to the Python path
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-# script_dir = os.path.abspath("/home/teodor/Documents/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_d2, wigner_D2
@@ -63,7 +63,7 @@ def T(i, K, Q, theta, chi):
     if i == 1:
 
         if K == 2 and Q == 0:
-            return -(3/(2*sqrt2))*st**2
+            return -(3/(2*sqrt2))*st**2 * c2
 
         if K == 2 and Q == 1:
             return -(sqrt3/2) * (c2*ct + 1j*s2) * st * ex1
@@ -746,4 +746,47 @@ for Q in [-2,-1,0,1,2]:
     print(
         Q,
         rho_code[idx(Q)] - rho_theory[idx(Q)]
+    )
+
+rho = np.zeros(5,dtype=complex)
+
+rho[idx(+2)] = 1.0
+rho[idx(-2)] = 1.0
+
+theta_obs = np.pi/2
+for chi_deg in [0, 22.5, 45, 67.5, 90]:
+
+    epsI,epsQ,epsU = emissivity_from_rho(
+        rho,
+        np.pi/2,
+        np.radians(chi_deg)
+    )
+
+    print()
+    print("chi =",chi_deg)
+
+    print("Q/I =", np.real(epsQ/epsI))
+    print("U/I =", np.real(epsU/epsI))
+
+for chi_deg in [0,22.5,45,67.5,90]:
+
+    epsI,epsQ,epsU = emissivity_from_rho(
+        rho,
+        np.pi/2,
+        np.radians(chi_deg)
+    )
+
+    print()
+    print("chi =",chi_deg)
+
+    print("epsI =",epsI)
+    print("epsQ =",epsQ)
+    print("epsU =",epsU)
+
+    print(
+        "sqrt(Q²+U²)=",
+        np.sqrt(
+            np.real(epsQ)**2 +
+            np.real(epsU)**2
+        )
     )
