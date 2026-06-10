@@ -27,3 +27,9 @@ for polarized radiation field due to presence of magnetic field.
   <li> Added ALI option in <it>functions_prt.py</it>. </li>
   <li> Frequency-resolved radiation field → frequency-resolved source function, but ALI is causing issues when trying to solve polarized radiative transfer (seems SC function needs work). </li>
 </ul>
+
+`10. 06. 2026.`
+<ul>
+  <li> Separated J computation, Hanle parameter, rotation and density matrix into different functions. </li>
+  <li> Inspiration Polarization in Spectral Lines by Landi Degl'Innocenti & Landolfi (2004). </li>
+</ul>

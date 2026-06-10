@@ -971,3 +971,262 @@ for Q in [-2,-1,0,1,2]:
         "TQ =", T(1,2,Q,np.pi/2,0,0),
         "TU =", T(2,2,Q,np.pi/2,0,0)
     )
+
+# 10. 06. 2026. Trying to solve SEE before applying Hanle effect
+def tP(i, P):
+
+    if i == 0:
+
+        if P == 0:
+            return 1/np.sqrt(2)
+
+    elif i == 1:
+
+        if P == -2:
+            return -np.sqrt(3)/2
+
+        if P == 2:
+            return -np.sqrt(3)/2
+
+    elif i == 2:
+
+        if P == -2:
+            return +1j*np.sqrt(3)/2
+
+        if P == 2:
+            return -1j*np.sqrt(3)/2
+
+    return 0.0j
+
+
+def T_book(i, Q,
+           theta_obs,
+           chi_obs,
+           gamma_obs):
+
+    Dobs = wigner_D2(
+        chi_obs,
+        theta_obs,
+        gamma_obs
+    )
+
+    val = 0j
+
+    for P in [-2,-1,0,1,2]:
+
+        val += (
+            tP(i,P)
+            *
+            Dobs[idx(P),idx(Q)]
+        )
+
+    return val
+
+def rho_two_level_noB(JKQ):
+    """
+    Eq. (10.13)
+    Jl=0 -> Ju=1
+    w^(2)=1
+    """
+
+    rho = np.zeros(5,dtype=complex)
+
+    for Q in [-2,-1,0,1,2]:
+
+        rho[idx(Q)] = (
+            (-1)**Q
+            *
+            JKQ[idx(-Q)]
+        )
+
+    return rho
+
+def emissivity_two_level_noB(
+        JKQ,
+        theta_obs,
+        chi_obs,
+        gamma_obs):
+
+    rho = rho_two_level_noB(JKQ)
+
+    epsI = 0j
+    epsQ = 0j
+    epsU = 0j
+
+    #
+    # K=0 contribution
+    #
+    epsI += 1.0/np.sqrt(2)
+
+    #
+    # K=2 contribution
+    #
+    for Q in [-2,-1,0,1,2]:
+
+        epsI += (
+            T_book(
+                0,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho[idx(Q)]
+        )
+
+        epsQ += (
+            T_book(
+                1,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho[idx(Q)]
+        )
+
+        epsU += (
+            T_book(
+                2,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho[idx(Q)]
+        )
+
+    return epsI,epsQ,epsU
+
+JKQ = np.zeros(5,dtype=complex)
+JKQ[idx(0)] = 1.0
+
+rho = rho_two_level_noB(JKQ)
+
+print("rho")
+for Q in [-2,-1,0,1,2]:
+    print(Q, rho[idx(Q)])
+
+epsI,epsQ,epsU = emissivity_two_level_noB(
+
+    JKQ,
+
+    theta_obs=np.pi/2,
+    chi_obs=0.0,
+    gamma_obs=0.0
+)
+
+print()
+print("epsI =", epsI)
+print("epsQ =", epsQ)
+print("epsU =", epsU)
+
+print()
+print("Q/I =", np.real(epsQ/epsI))
+print("U/I =", np.real(epsU/epsI))
+
+# 10. 06. 2026. 19:08
+print("="*70)
+print("TENSOR TABLE")
+print("="*70)
+
+theta = np.pi/2
+chi   = 0.0
+gamma = 0.0
+
+for i,name in zip([0,1,2],["I","Q","U"]):
+
+    print()
+    print(f"STOKES {name}")
+
+    for Q in [-2,-1,0,1,2]:
+
+        val = T_book(
+            i,Q,
+            theta,
+            chi,
+            gamma
+        )
+
+        print(
+            f"Q={Q:+d}",
+            val
+        )
+
+theta = np.pi/2
+chi   = 0
+gamma = 0
+sqrt2 = np.sqrt(2)
+sqrt3 = np.sqrt(3)
+
+TI_ref = {
+    -2 :  sqrt3/4,
+    -1 :  0,
+     0 : -1/(2*sqrt2),
+     1 :  0,
+     2 :  sqrt3/4
+}
+
+TQ_ref = {
+    -2 :  sqrt3/4,
+    -1 :  0,
+     0 :  3/(2*sqrt2),
+     1 :  0,
+     2 :  sqrt3/4
+}
+
+TU_ref = {
+    -2 : -1j*sqrt3/4,
+    -1 : 0,
+     0 : 0,
+     1 : 0,
+     2 : 1j*sqrt3/4
+}
+
+print()
+print("="*70)
+print("COMPARISON WITH LL04")
+print("="*70)
+
+for Q in [-2,-1,0,1,2]:
+
+    TI = T_book(0,Q,np.pi/2,0,0)
+    TQ = T_book(1,Q,np.pi/2,0,0)
+    TU = T_book(2,Q,np.pi/2,0,0)
+
+    print()
+    print("Q =",Q)
+
+    print(
+        "I:",
+        TI,
+        "ref=",
+        TI_ref[Q],
+        "diff=",
+        TI-TI_ref[Q]
+    )
+
+    print(
+        "Q:",
+        TQ,
+        "ref=",
+        TQ_ref[Q],
+        "diff=",
+        TQ-TQ_ref[Q]
+    )
+
+    print(
+        "U:",
+        TU,
+        "ref=",
+        TU_ref[Q],
+        "diff=",
+        TU-TU_ref[Q]
+    )
+
+rho = np.zeros(5,dtype=complex)
+rho[idx(0)] = 1.0
+epsI2 = T_book(0,0,np.pi/2,0,0)
+epsQ2 = T_book(1,0,np.pi/2,0,0)
+
+print("epsI2 =",epsI2)
+print("epsQ2 =",epsQ2)
+
+print("ratio =",epsQ2/epsI2)
