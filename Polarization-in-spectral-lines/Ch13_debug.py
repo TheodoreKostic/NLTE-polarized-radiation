@@ -71,8 +71,8 @@ def hanle_polarization_corrected(
         chi_B,
         theta_obs,
         chi_obs,
-        gamma_obs,
-        w=1.0):
+        gamma_obs=np.pi/2,
+        w=0.379):
     """
     CORRECTED VERSION: Apply Hanle as full matrix operator in frame transformation.
     
@@ -151,8 +151,8 @@ for Hu in [0.0, 0.1, 1.0, 1e6]:
             chi_B=np.radians(chi),
             theta_obs=np.pi/2,
             chi_obs=0.0,
-            gamma_obs=0.0,
-            w=1.0
+            gamma_obs=np.pi/2,
+            w=0.379/2
         )
         print(f"  χB={chi:3d}° : Q/I = {pQ:+.6f}, U/I = {pU:+.6f}")
 
@@ -174,8 +174,8 @@ for chi_B in chi_B_grid:
         chi_B=chi_B,
         theta_obs=np.pi/2,
         chi_obs=0.0,
-        gamma_obs=0.0,
-        w=1.0
+        gamma_obs=np.pi/2,
+        w=0.379/2
     )
     Q_vals.append(pQ)
     U_vals.append(pU)
@@ -215,8 +215,8 @@ for Hu in Hu_values:
             chi_B=chi_B,
             theta_obs=np.pi/2,
             chi_obs=0.0,
-            gamma_obs=0.0,
-            w=1.0
+            gamma_obs=np.pi/2,
+            w=0.379/2
         )
         PU.append(pU)
         PQ.append(pQ)
@@ -235,8 +235,8 @@ for chi_deg in [0, 45, 90, 135, 180]:
         chi_B=np.radians(chi_deg),
         theta_obs=np.pi/2,
         chi_obs=0.0,
-        gamma_obs=0.0,
-        w=1.0
+        gamma_obs=np.pi/2,
+        w=0.379/2
     )
     plt.plot(pU, pQ, 'ko', markersize=5)
     plt.text(pU + 0.01, pQ, f"{chi_deg}°", fontsize=9)
