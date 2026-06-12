@@ -3,7 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -130,6 +131,7 @@ def hanle_polarization_corrected(
     J_hanle = H_full @ Jvert
 
     Hfull = D @ H_diag @ D.conj().T
+
     rho20 = Hfull @ Jarr
 
     # Compute emissivity
@@ -138,10 +140,19 @@ def hanle_polarization_corrected(
     epsU = 0.0j
 
     for i, Q in enumerate(Qs):
-        
-        epsI += T(0, 2, Q, theta_obs, chi_obs, gamma_obs) * rho20[i]
-        epsQ += T(1, 2, Q, theta_obs, chi_obs, gamma_obs) * rho20[i]
-        epsU += T(2, 2, Q, theta_obs, chi_obs, gamma_obs) * rho20[i]
+
+        rho = rho20[idx(-Q)]
+
+        phase = (-1.0)**Q
+
+        epsI += phase * T(0,2,Q,
+                        theta_obs,chi_obs,gamma_obs) * rho
+
+        epsQ += phase * T(1,2,Q,
+                        theta_obs,chi_obs,gamma_obs) * rho
+
+        epsU += phase * T(2,2,Q,
+                        theta_obs,chi_obs,gamma_obs) * rho
 
     pQ = np.real(epsQ / epsI)
     pU = np.real(epsU / epsI)
@@ -871,8 +882,10 @@ print("alignment =", alignment)
 # TESTS
 # ============================================================
 
-hR = 0.1
+hR = 0.073
 gamma_obs = np.pi/2
+chi_obs = 0.0
+
 Jrad = radiation_tensor(hR)
 
 print("w =", anisotropy_factor(Jrad))
@@ -898,7 +911,7 @@ for Hu in [0.0, 0.1, 1.0, 1e6]:
             theta_B=np.pi/2,
             chi_B=np.radians(chi),
             theta_obs=np.pi/2,
-            chi_obs=0.0,
+            chi_obs=chi_obs,
             gamma_obs=gamma_obs
         )
         print(f"  χB={chi:3d}° : Q/I = {pQ:+.6f}, U/I = {pU:+.6f}")
@@ -921,7 +934,7 @@ for chi_B in chi_B_grid:
         theta_B=np.pi/2,
         chi_B=chi_B,
         theta_obs=np.pi/2,
-        chi_obs=0.0,
+        chi_obs=chi_obs,
         gamma_obs=gamma_obs
     )
     Q_vals.append(pQ)
@@ -986,7 +999,7 @@ for Hu in Hu_values:
             theta_B=np.pi/2,
             chi_B=chi_B,
             theta_obs=np.pi/2,
-            chi_obs=0.0,
+            chi_obs=chi_obs,
             gamma_obs=gamma_obs
         )
 
@@ -1050,7 +1063,7 @@ for chi_deg in chi_const_deg:
             theta_B=np.pi/2,
             chi_B=np.radians(chi_deg),
             theta_obs=np.pi/2,
-            chi_obs=0.0,
+            chi_obs=chi_obs,
             gamma_obs=gamma_obs
         )
 
@@ -1113,7 +1126,7 @@ for chi_deg in [0, 45, 90, 135, 180]:
         theta_B=np.pi/2,
         chi_B=np.radians(chi_deg),
         theta_obs=np.pi/2,
-        chi_obs=0.0,
+        chi_obs=chi_obs,
         gamma_obs=gamma_obs
     )
 
@@ -1232,3 +1245,560 @@ Jmag = D.conj().T @ Jarr
 
 for q,val in zip([-2,-1,0,1,2], Jmag):
     print(q, val)
+
+for chi_deg in [0,30,60,90,120,150,180]:
+    pQ, pU = hanle_polarization_corrected(
+        Hu=0.08,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi_deg),
+        theta_obs=np.pi/2,
+        chi_obs=0,
+        gamma_obs=np.pi/2
+    )
+
+    print(
+        chi_deg,
+        "Q=", pQ,
+        "U=", pU
+    )
+print("------------------------------------------")
+for chi_deg in [0,30,60,90,120,150,180]:
+    pQ, pU = hanle_polarization_corrected(
+        Hu=3.16,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi_deg),
+        theta_obs=np.pi/2,
+        chi_obs=0,
+        gamma_obs=np.pi/2
+    )
+
+    print(
+        chi_deg,
+        "Q=", pQ,
+        "U=", pU
+    )
+
+# New hanle function
+def hanle_polarization_rotated(
+        Hu,
+        J_rad,
+        theta_B,
+        chi_B,
+        theta_obs,
+        chi_obs,
+        gamma_obs=np.pi/2):
+    """
+    Hanle polarization following LL04:
+
+        J_vert -> J_mag
+        rho_mag from Eq. (10.30)
+        rho_mag -> rho_vert
+        emissivity from rho_vert
+    """
+
+    # -----------------------------
+    # Radiation tensor (K=2)
+    # -----------------------------
+    Jvert = Jrad_to_array(J_rad)
+
+    # K=0 component
+    rho00 = J_rad[(0,0)]
+
+    # -----------------------------
+    # Rotate vertical -> magnetic
+    # -----------------------------
+    D = wigner_D2(
+        chi_B,
+        theta_B,
+        0.0
+    )
+
+    Jmag = D @ Jvert
+
+    # -----------------------------
+    # Hanle effect in magnetic frame
+    # -----------------------------
+    rho_mag = rhoKQ_hanle_two_level(
+        Jmag,
+        Hu
+    )
+
+    # -----------------------------
+    # Rotate back
+    # -----------------------------
+    rho_vert = D.conj().T @ rho_mag
+
+    # -----------------------------
+    # Emissivity
+    # -----------------------------
+    epsI = rho00 + 0j
+    epsQ = 0j
+    epsU = 0j
+
+    for Q in [-2,-1,0,1,2]:
+
+        r = rho_vert[idx(Q)]
+
+        epsI += (
+            T(
+                0,
+                2,
+                Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * r
+        )
+
+        epsQ += (
+            T(
+                1,
+                2,
+                Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * r
+        )
+
+        epsU += (
+            T(
+                2,
+                2,
+                Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * r
+        )
+
+    pQ = np.real(epsQ / epsI)
+    pU = np.real(epsU / epsI)
+
+    return pQ, pU
+
+hR = 0.073
+gamma_obs = np.pi/2
+Jrad = radiation_tensor(hR)
+
+print("w =", anisotropy_factor(Jrad))
+
+print("=" * 70)
+print("CORRECTED HANLE - FULL MATRIX OPERATOR")
+print("=" * 70)
+
+print()
+print("TEST 1: Q/I and U/I vs chi_B")
+print("-" * 70)
+
+chi_deg_test = np.array([0, 30, 60, 90, 120, 150, 180])
+
+for Hu in [0.0, 0.1, 1.0, 1e6]:
+    print()
+    print(f"Hu = {Hu:g}")
+    
+    for chi in chi_deg_test:
+        pQ, pU = hanle_polarization_rotated(
+            Hu=Hu,
+            J_rad = Jrad,
+            theta_B=np.pi/2,
+            chi_B=np.radians(chi),
+            theta_obs=np.pi/2,
+            chi_obs=0.0,
+            gamma_obs=gamma_obs
+        )
+        print(f"  χB={chi:3d}° : Q/I = {pQ:+.6f}, U/I = {pU:+.6f}")
+
+# Test 2: Saturated limit properties
+print()
+print()
+print("TEST 2: Saturated limit (Hu = 1e6)")
+print("-" * 70)
+
+chi_B_grid = np.linspace(0, np.pi, 181)
+
+Q_vals = []
+U_vals = []
+
+for chi_B in chi_B_grid:
+    pQ, pU = hanle_polarization_rotated(
+        Hu=1e6,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=chi_B,
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=gamma_obs
+    )
+    Q_vals.append(pQ)
+    U_vals.append(pU)
+
+Q_vals = np.array(Q_vals)
+U_vals = np.array(U_vals)
+
+print(f"Q/I range: [{np.min(Q_vals):.6f}, {np.max(Q_vals):.6f}]")
+print(f"U/I range: [{np.min(U_vals):.6f}, {np.max(U_vals):.6f}]")
+print(f"Variation in Q: {np.max(Q_vals) - np.min(Q_vals):.6f}")
+print(f"Variation in U: {np.max(U_vals) - np.min(U_vals):.6f}")
+
+if np.max(Q_vals) - np.min(Q_vals) > 0.01 or np.max(U_vals) - np.min(U_vals) > 0.01:
+    print("✓ GOOD: χB dependence is PRESENT")
+else:
+    print("✗ BAD: χB dependence is MISSING")
+
+# ============================================================
+# PLOT HANLE DIAGRAM
+# ============================================================
+
+print()
+print()
+print("GENERATING PLOT")
+print("-" * 70)
+
+Hu_values = [0.08, 0.16, 0.25, 0.36,
+             0.50, 0.69, 0.98,
+             1.54, 3.16, 1e6]
+
+chi_B_grid = np.linspace(0, np.pi, 721)
+
+plt.figure(figsize=(9, 9))
+
+# ============================================================
+# DASHED CURVES : Hu = const
+# ============================================================
+
+label_fraction = {
+    0.08: 0.88,
+    0.16: 0.87,
+    0.25: 0.86,
+    0.36: 0.84,
+    0.50: 0.82,
+    0.69: 0.80,
+    0.98: 0.77,
+    1.54: 0.72,
+    3.16: 0.65,
+}
+
+for Hu in Hu_values:
+
+    PU = []
+    PQ = []
+
+    for chi_B in chi_B_grid:
+
+        pQ, pU = hanle_polarization_rotated(
+            Hu=Hu,
+            J_rad=Jrad,
+            theta_B=np.pi/2,
+            chi_B=chi_B,
+            theta_obs=np.pi/2,
+            chi_obs=0.0,
+            gamma_obs=gamma_obs
+        )
+
+        PU.append(pU)
+        PQ.append(pQ)
+
+    PU = np.array(PU)
+    PQ = np.array(PQ)
+
+    plt.plot(
+        PU,
+        PQ,
+        '--',
+        lw=1.5
+    )
+
+    # Label Hu curves
+
+    if Hu < 1e6:
+
+        idx_lab = int(
+            label_fraction[Hu] * len(PU)
+        )
+
+        plt.text(
+            PU[idx_lab],
+            PQ[idx_lab],
+            f"{Hu:g}",
+            fontsize=9,
+            ha='left',
+            va='center',
+            bbox=dict(
+                facecolor='white',
+                edgecolor='none',
+                alpha=0.8
+            )
+        )
+
+# ============================================================
+# SOLID CURVES : chi_B = const
+# ============================================================
+
+chi_const_deg = [0, 30, 60, 90, 120, 150, 180]
+
+Hu_grid = np.logspace(
+    np.log10(0.08),
+    np.log10(1e6),
+    400
+)
+
+for chi_deg in chi_const_deg:
+
+    PU = []
+    PQ = []
+
+    for Hu in Hu_grid:
+
+        pQ, pU = hanle_polarization_rotated(
+            Hu=Hu,
+            J_rad=Jrad,
+            theta_B=np.pi/2,
+            chi_B=np.radians(chi_deg),
+            theta_obs=np.pi/2,
+            chi_obs=0.0,
+            gamma_obs=gamma_obs
+        )
+
+        PU.append(pU)
+        PQ.append(pQ)
+
+    PU = np.array(PU)
+    PQ = np.array(PQ)
+
+    # Horizontal flip to match Fig. 13.3
+
+    PU_plot = PU
+
+    plt.plot(
+        PU_plot,
+        PQ,
+        '-',
+        lw=1.0
+    )
+
+    label_Hu = {
+        0:   3.16,
+        30:  1.54,
+        60:  0.69,
+        90:  0.36,
+        120: 0.69,
+        150: 1.54,
+        180: 3.16,
+    }
+
+    idx_lab = np.argmin(
+        np.abs(Hu_grid - label_Hu[chi_deg])
+    )
+
+    plt.text(
+        PU_plot[idx_lab],
+        PQ[idx_lab],
+        f"{chi_deg}°",
+        fontsize=8,
+        ha='center',
+        va='center',
+        bbox=dict(
+            facecolor='white',
+            edgecolor='none',
+            alpha=0.8
+        )
+    )
+
+# ============================================================
+# SATURATED LIMIT MARKERS
+# ============================================================
+'''
+Hu = 1e6
+
+for chi_deg in [0, 45, 90, 135, 180]:
+
+    pQ, pU = hanle_polarization_corrected(
+        Hu=Hu,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi_deg),
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=gamma_obs
+    )
+
+    plt.plot(pU, pQ, 'ko', markersize=5)
+
+    plt.text(
+        pU + 0.01,
+        pQ,
+        f"{chi_deg}°",
+        fontsize=9
+    )
+'''
+plt.xlabel(r"$U/I$", fontsize=12)
+plt.ylabel(r"$Q/I$", fontsize=12)
+
+plt.title(
+    r"Hanle diagram ($\theta_B=90^\circ$)",
+    fontsize=12
+)
+
+plt.grid(True, alpha=0.3)
+plt.axis("equal")
+
+plt.tight_layout()
+
+plt.savefig(
+    "Hanle_rho.png",
+    dpi=300
+)
+
+print("Saved: Hanle_rho.png")
+
+print("-------------------------")
+for g in [0, np.pi/2]:
+    pQ,pU = hanle_polarization_corrected(
+        Hu=0.08,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=0,
+        theta_obs=np.pi/2,
+        chi_obs=0,
+        gamma_obs=g
+    )
+    print(g, pQ, pU)
+
+J_arr = Jrad_to_array(Jrad)
+print(J_arr)
+
+pQ,pU = hanle_polarization_corrected(
+        Hu=0.08,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=0,
+        theta_obs=np.pi/2,
+        chi_obs=0,
+        gamma_obs=np.pi/2
+    )
+print(g, pQ, pU)
+
+def test_emissivity_from_rho20(rho20,
+                               theta_obs=np.pi/2,
+                               chi_obs=0.0,
+                               gamma_obs=np.pi/2):
+
+    Qs = [-2,-1,0,1,2]
+
+    epsQ = 0j
+    epsU = 0j
+
+    print("\nContributions to emissivity")
+    print("-"*60)
+
+    for i,Q in enumerate(Qs):
+
+        tq = T(1,2,Q,
+               theta_obs,
+               chi_obs,
+               gamma_obs)
+
+        tu = T(2,2,Q,
+               theta_obs,
+               chi_obs,
+               gamma_obs)
+
+        contribQ = tq * rho20[i]
+        contribU = tu * rho20[i]
+
+        epsQ += contribQ
+        epsU += contribU
+
+        print(
+            f"Q={Q:+d}  "
+            f"rho={rho20[i]: .6e}  "
+            f"TQ={tq: .6e}  "
+            f"TU={tu: .6e}"
+        )
+
+    print()
+    print("epsQ =", epsQ)
+    print("epsU =", epsU)
+
+    return epsQ, epsU
+
+Hu = 0.08
+
+theta_B = np.pi/2
+chi_B   = 0.0
+
+D = wigner_D2(chi_B, theta_B, 0.0)
+
+Qs = np.array([-2,-1,0,1,2])
+
+Hdiag = np.diag(
+    [1/(1+1j*Q*Hu) for Q in Qs]
+)
+
+Jarr = Jrad_to_array(Jrad)
+
+rho20 = (D @ Hdiag @ D.conj().T) @ Jarr
+
+print("\nrho20:")
+for q,val in zip(Qs,rho20):
+    print(q,val)
+
+test_emissivity_from_rho20(
+    rho20,
+    theta_obs=np.pi/2,
+    chi_obs=0.0,
+    gamma_obs=np.pi/2
+)
+
+for Q in [-2,-1,0,1,2]:
+    print(
+        Q,
+        T(2,2,Q,np.pi/2,0,np.pi/2),
+        T(2,2,-Q,np.pi/2,0,np.pi/2)
+    )
+    print("---------")
+print(
+    T(2,2,-1,np.pi/2,0,np.pi/2)
+    -
+    (-1)**1 * np.conj(
+        T(2,2,1,np.pi/2,0,np.pi/2)
+    )
+)
+
+for gamma in np.linspace(0, np.pi, 13):
+
+    pQ, pU = hanle_polarization_corrected(
+        Hu=0.08,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=0.0,
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=gamma
+    )
+
+    print(
+        f"gamma={gamma:.3f}",
+        "Q=", pQ,
+        "U=", pU
+    )
+
+for chi_deg in [0,30,60,90,120,150,180]:
+
+    pQ,pU = hanle_polarization_corrected(
+        Hu=1e6,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi_deg),
+        theta_obs=np.pi/2,
+        chi_obs=np.pi/2,   # <--- changed
+        gamma_obs=np.pi/2
+    )
+
+    print(chi_deg, pQ, pU)
