@@ -2010,8 +2010,9 @@ plt.savefig(
 )
 
 # Fig. 13.4, delta = 30 deg
-
-hR = 0.073
+delta = np.radians(30.0)
+hp = 0.073      # projected height from Fig. 13.3
+hR = (1 + hp)/np.cos(delta) - 1
 gamma_obs = np.pi/2
 chi_obs = 0.0
 
@@ -2509,6 +2510,20 @@ S0 = sum(abs(J0[(2,Q)])**2 for Q in range(-2,3))
 S30 = sum(abs(J30[(2,Q)])**2 for Q in range(-2,3))
 print(S0)
 print(S30)
+
+print("---------")
+for Hu in [1e-6,1e-4,1e-2,0.1,1.0,10,1e6]:
+    for chi_B in [0, 90, 270]:
+        pQ,pU = hanle_polarization_corrected(
+            Hu=Hu,
+            J_rad=Jrad,
+            theta_B=np.pi/2,
+            chi_B=np.radians(chi_B),
+            theta_obs=np.pi/2,
+            chi_obs=0.0,
+            gamma_obs=np.pi/2
+        )
+        print(Hu,chi_B,pQ,pU)
 
 def tP_observer(i):
 
