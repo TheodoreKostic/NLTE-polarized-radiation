@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -87,6 +87,9 @@ def Jrad_to_array(Jrad):
 
     return Jarr
 
+def qidx(Q):
+    return Q + 2
+
 # with rho and J
 def hanle_polarization_corrected(
         Hu,
@@ -128,12 +131,17 @@ def hanle_polarization_corrected(
     H_full = D @ H_diag @ D_conj_T
     
     # Apply to radiation field
-    J_hanle = H_full @ Jvert
+    #J_hanle = H_full @ Jvert
 
     Hfull = D @ H_diag @ D.conj().T
-
     rho20 = Hfull @ Jarr
+    '''
+    Jmag = D.conj().T @ Jarr
 
+    rho_mag = H_diag @ Jmag
+
+    rho_vert = D @ rho_mag
+    '''
     # Compute emissivity
     epsI = rho00
     epsQ = 0.0j
@@ -290,6 +298,27 @@ def radiation_tensor(hR):
 
     return J
 
+def radiation_tensor_delta(hR, delta):
+
+    J0 = radiation_tensor(hR)
+
+    Jarr = np.zeros(5, dtype=complex)
+
+    Jarr[idx(0)] = J0[(2,0)]
+
+    D = wigner_D2(0.0, delta, 0.0)
+
+    Jrot = D @ Jarr
+
+    J = {}
+
+    J[(0,0)] = J0[(0,0)]
+
+    for Q in [-2,-1,0,1,2]:
+        J[(2,Q)] = Jrot[idx(Q)]
+
+    return J
+
 # 10.27 from 
 def rhoKQ_hanle_two_level(
         JKQ,
@@ -317,7 +346,7 @@ def rhoKQ_hanle_two_level(
         rho[idx(Q)] = (
             prefactor
             * (-1)**Q
-            * JKQ[idx(-Q)]
+            * JKQ[qidx(-Q)]
             /
             (1.0 + 1j*Q*Hu)
         )
@@ -371,7 +400,7 @@ def J2_vertical(hR):
     Jvert = np.zeros(5,dtype=complex)
 
     for Q in [-2,-1,0,1,2]:
-        Jvert[idx(Q)] = Jrad[(2,Q)]
+        Jvert[qidx(Q)] = Jrad[(2,Q)]
 
     return Jvert
 
@@ -882,6 +911,12 @@ print("alignment =", alignment)
 # TESTS
 # ============================================================
 
+# Dodati za Hu < 0.08 i dodati za slucaj koji resava bez Hanleovog efekta
+# Da li se za Hu = 0 dobija slucaj bez magnetnog polja i dopuniti za taj slucaj
+# Pogledati Fig. 5.12 i Fig. 10.2
+# Sledeci test slucaj >>> Fig 13.6 i Fig 13.7, jednacina (13.20)
+# za Fig. 13.7 
+
 hR = 0.073
 gamma_obs = np.pi/2
 chi_obs = 0.0
@@ -964,7 +999,7 @@ print("-" * 70)
 
 Hu_values = [0.08, 0.16, 0.25, 0.36,
              0.50, 0.69, 0.98,
-             1.54, 3.16, 1e6]
+             1.54, 3.16]
 
 chi_B_grid = np.linspace(0, np.pi, 721)
 
@@ -1044,17 +1079,13 @@ for Hu in Hu_values:
 
 chi_const_deg = [0, 30, 60, 90, 120, 150, 180]
 
-Hu_grid = np.logspace(
-    np.log10(0.08),
-    np.log10(1e6),
-    400
-)
+Hu_grid = np.logspace(-12, np.log10(3.16), 400)
 
 for chi_deg in chi_const_deg:
 
     PU = []
     PQ = []
-
+    
     for Hu in Hu_grid:
 
         pQ, pU = hanle_polarization_corrected(
@@ -1462,7 +1493,7 @@ print("-" * 70)
 
 Hu_values = [0.08, 0.16, 0.25, 0.36,
              0.50, 0.69, 0.98,
-             1.54, 3.16, 1e6]
+             1.54, 3.16]
 
 chi_B_grid = np.linspace(0, np.pi, 721)
 
@@ -1542,11 +1573,7 @@ for Hu in Hu_values:
 
 chi_const_deg = [0, 30, 60, 90, 120, 150, 180]
 
-Hu_grid = np.logspace(
-    np.log10(0.08),
-    np.log10(1e6),
-    400
-)
+Hu_grid = np.logspace(-12, np.log10(3.16), 400)
 
 for chi_deg in chi_const_deg:
 
@@ -1802,3 +1829,998 @@ for chi_deg in [0,30,60,90,120,150,180]:
     )
 
     print(chi_deg, pQ, pU)
+
+for Hu in [0.0, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2]:
+
+    pQ, pU = hanle_polarization_corrected(
+        Hu=Hu,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(0),
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=np.pi/2
+    )
+
+    print(Hu, pQ, pU)
+
+print("2x2 Diagnosti panel")
+# ============================================================
+# 2x2 DIAGNOSTIC PANEL
+# ============================================================
+
+fig, axes = plt.subplots(
+    2, 2,
+    figsize=(14, 14)
+)
+
+observer_setups = [
+
+    (0.0, np.pi/2,
+     r"$\chi_{\rm obs}=0,\ \gamma_{\rm obs}=90^\circ$"),
+
+    (np.pi/2, np.pi/2,
+     r"$\chi_{\rm obs}=90^\circ,\ \gamma_{\rm obs}=90^\circ$"),
+
+    (0.0, 0.0,
+     r"$\chi_{\rm obs}=0,\ \gamma_{\rm obs}=0^\circ$"),
+
+    (np.pi/2, 0.0,
+     r"$\chi_{\rm obs}=90^\circ,\ \gamma_{\rm obs}=0^\circ$")
+]
+
+for ax, (chi_obs, gamma_obs, panel_title) in zip(
+        axes.ravel(),
+        observer_setups):
+
+    # ========================================================
+    # DASHED CURVES : Hu = const
+    # ========================================================
+
+    for Hu in Hu_values:
+
+        PU = []
+        PQ = []
+
+        for chi_B in chi_B_grid:
+
+            pQ, pU = hanle_polarization_corrected(
+                Hu=Hu,
+                J_rad=Jrad,
+                theta_B=np.pi/2,
+                chi_B=chi_B,
+                theta_obs=np.pi/2,
+                chi_obs=chi_obs,
+                gamma_obs=gamma_obs
+            )
+
+            PU.append(pU)
+            PQ.append(pQ)
+
+        PU = np.array(PU)
+        PQ = np.array(PQ)
+
+        ax.plot(
+            PU,
+            PQ,
+            '--',
+            lw=1.5
+        )
+
+        if Hu < 1e6:
+
+            idx_lab = int(
+                label_fraction[Hu] * len(PU)
+            )
+
+            ax.text(
+                PU[idx_lab],
+                PQ[idx_lab],
+                f"{Hu:g}",
+                fontsize=8,
+                bbox=dict(
+                    facecolor='white',
+                    edgecolor='none',
+                    alpha=0.8
+                )
+            )
+
+    # ========================================================
+    # SOLID CURVES : chiB = const
+    # ========================================================
+
+    for chi_deg in chi_const_deg:
+
+        PU = []
+        PQ = []
+
+        for Hu in Hu_grid:
+
+            pQ, pU = hanle_polarization_corrected(
+                Hu=Hu,
+                J_rad=Jrad,
+                theta_B=np.pi/2,
+                chi_B=np.radians(chi_deg),
+                theta_obs=np.pi/2,
+                chi_obs=chi_obs,
+                gamma_obs=gamma_obs
+            )
+
+            PU.append(pU)
+            PQ.append(pQ)
+
+        PU = np.array(PU)
+        PQ = np.array(PQ)
+
+        ax.plot(
+            PU,
+            PQ,
+            '-',
+            lw=1.2
+        )
+
+        label_Hu = {
+            0:   3.16,
+            30:  1.54,
+            60:  0.69,
+            90:  0.36,
+            120: 0.69,
+            150: 1.54,
+            180: 3.16,
+        }
+
+        idx_lab = np.argmin(
+            np.abs(
+                Hu_grid
+                - label_Hu[chi_deg]
+            )
+        )
+
+        ax.text(
+            PU[idx_lab],
+            PQ[idx_lab],
+            f"{chi_deg}°",
+            fontsize=8,
+            bbox=dict(
+                facecolor='white',
+                edgecolor='none',
+                alpha=0.8
+            )
+        )
+
+    ax.set_title(panel_title)
+
+    ax.set_xlabel(r"$U/I$")
+    ax.set_ylabel(r"$Q/I$")
+
+    ax.grid(True, alpha=0.3)
+
+    ax.set_aspect("equal")
+
+plt.suptitle(
+    r"Hanle diagram diagnostic ($\theta_B=90^\circ$)",
+    fontsize=16
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    "Hanle_2x2_diagnostic.png",
+    dpi=300
+)
+
+# Fig. 13.4, delta = 30 deg
+
+hR = 0.073
+gamma_obs = np.pi/2
+chi_obs = 0.0
+
+Jrad = radiation_tensor_delta(hR, np.radians(30))
+
+print("w =", anisotropy_factor(Jrad))
+
+print("=" * 70)
+print("CORRECTED HANLE - FULL MATRIX OPERATOR")
+print("=" * 70)
+
+print()
+print("TEST 1: Q/I and U/I vs chi_B")
+print("-" * 70)
+
+chi_deg_test = np.array([0, 30, 60, 90, 120, 150, 180])
+
+for Hu in [0.0, 0.1, 1.0, 1e6]:
+    print()
+    print(f"Hu = {Hu:g}")
+    
+    for chi in chi_deg_test:
+        pQ, pU = hanle_polarization_corrected(
+            Hu=Hu,
+            J_rad = Jrad,
+            theta_B=np.pi/2,
+            chi_B=np.radians(chi),
+            theta_obs=np.pi/2,
+            chi_obs=chi_obs,
+            gamma_obs=gamma_obs
+        )
+        print(f"  χB={chi:3d}° : Q/I = {pQ:+.6f}, U/I = {pU:+.6f}")
+
+# Test 2: Saturated limit properties
+print()
+print()
+print("TEST 2: Saturated limit (Hu = 1e6)")
+print("-" * 70)
+
+chi_B_grid = np.linspace(0, np.pi, 181)
+
+Q_vals = []
+U_vals = []
+
+for chi_B in chi_B_grid:
+    pQ, pU = hanle_polarization_corrected(
+        Hu=1e6,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=chi_B,
+        theta_obs=np.pi/2,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs
+    )
+    Q_vals.append(pQ)
+    U_vals.append(pU)
+
+Q_vals = np.array(Q_vals)
+U_vals = np.array(U_vals)
+
+print(f"Q/I range: [{np.min(Q_vals):.6f}, {np.max(Q_vals):.6f}]")
+print(f"U/I range: [{np.min(U_vals):.6f}, {np.max(U_vals):.6f}]")
+print(f"Variation in Q: {np.max(Q_vals) - np.min(Q_vals):.6f}")
+print(f"Variation in U: {np.max(U_vals) - np.min(U_vals):.6f}")
+
+if np.max(Q_vals) - np.min(Q_vals) > 0.01 or np.max(U_vals) - np.min(U_vals) > 0.01:
+    print("✓ GOOD: χB dependence is PRESENT")
+else:
+    print("✗ BAD: χB dependence is MISSING")
+
+# ============================================================
+# PLOT HANLE DIAGRAM
+# ============================================================
+
+print()
+print()
+print("GENERATING PLOT")
+print("-" * 70)
+
+Hu_values = [0.08, 0.16, 0.25, 0.36,
+             0.50, 0.69, 0.98,
+             1.54, 3.16]
+
+chi_B_grid = np.linspace(0, 2*np.pi, 721)
+
+plt.figure(figsize=(9, 9))
+
+# ============================================================
+# DASHED CURVES : Hu = const
+# ============================================================
+
+label_fraction = {
+    0.08: 0.88,
+    0.16: 0.87,
+    0.25: 0.86,
+    0.36: 0.84,
+    0.50: 0.82,
+    0.69: 0.80,
+    0.98: 0.77,
+    1.54: 0.72,
+    3.16: 0.65,
+}
+
+for Hu in Hu_values:
+
+    PU = []
+    PQ = []
+
+    for chi_B in chi_B_grid:
+
+        pQ, pU = hanle_polarization_corrected(
+            Hu=Hu,
+            J_rad=Jrad,
+            theta_B=np.pi/2,
+            chi_B=chi_B,
+            theta_obs=np.pi/2,
+            chi_obs=chi_obs,
+            gamma_obs=gamma_obs
+        )
+
+        PU.append(pU)
+        PQ.append(pQ)
+
+    PU = np.array(PU)
+    PQ = np.array(PQ)
+
+    plt.plot(
+        PU,
+        PQ,
+        '--',
+        lw=1.5
+    )
+
+    # Label Hu curves
+
+    if Hu < 1e6:
+
+        idx_lab = int(
+            label_fraction[Hu] * len(PU)
+        )
+
+        plt.text(
+            PU[idx_lab],
+            PQ[idx_lab],
+            f"{Hu:g}",
+            fontsize=9,
+            ha='left',
+            va='center',
+            bbox=dict(
+                facecolor='white',
+                edgecolor='none',
+                alpha=0.8
+            )
+        )
+
+# ============================================================
+# SOLID CURVES : chi_B = const
+# ============================================================
+
+chi_const_deg = [0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+
+Hu_grid = np.logspace(-6, np.log10(3.16), 400)
+
+for chi_deg in chi_const_deg:
+
+    PU = []
+    PQ = []
+    
+    for Hu in Hu_grid:
+
+        pQ, pU = hanle_polarization_corrected(
+            Hu=Hu,
+            J_rad=Jrad,
+            theta_B=np.pi/2,
+            chi_B=np.radians(chi_deg),
+            theta_obs=np.pi/2,
+            chi_obs=chi_obs,
+            gamma_obs=gamma_obs
+        )
+
+        PU.append(pU)
+        PQ.append(pQ)
+
+    PU = np.array(PU)
+    PQ = np.array(PQ)
+
+    # Horizontal flip to match Fig. 13.3
+
+    PU_plot = PU
+
+    plt.plot(
+        PU_plot,
+        PQ,
+        'k-',
+        lw=1.0
+    )
+
+    curve_number = {
+    0: 1,
+    30: 2,
+    60: 3,
+    90: 4,
+    120: 5,
+    150: 6,
+    180: 7,
+    210: 8,
+    240: 9,
+    270: 10,
+    300: 11,
+    330: 12,
+}
+
+    idx_lab = np.argmin(np.abs(Hu_grid - curve_number[chi_deg]))
+
+    plt.text(
+        PU_plot[idx_lab],
+        PQ[idx_lab],
+        f"{curve_number[chi_deg]}",
+        fontsize=8,
+        ha='center',
+        va='center',
+        bbox=dict(
+            facecolor='white',
+            edgecolor='none',
+            alpha=0.8
+        )
+    )
+
+# ============================================================
+# SATURATED LIMIT MARKERS
+# ============================================================
+'''
+Hu = 1e6
+
+for chi_deg in [0, 45, 90, 135, 180]:
+
+    pQ, pU = hanle_polarization_corrected(
+        Hu=Hu,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi_deg),
+        theta_obs=np.pi/2,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs
+    )
+
+    plt.plot(pU, pQ, 'ko', markersize=5)
+
+    plt.text(
+        pU + 0.01,
+        pQ,
+        f"{chi_deg}°",
+        fontsize=9
+    )
+'''
+plt.xlabel(r"$U/I$", fontsize=12)
+plt.ylabel(r"$Q/I$", fontsize=12)
+
+plt.title(
+    r"Hanle diagram ($\theta_B=90^\circ$)",
+    fontsize=12
+)
+
+plt.grid(True, alpha=0.3)
+plt.axis("equal")
+
+plt.tight_layout()
+
+plt.savefig(
+    "Hanle_substitute_30deg.png",
+    dpi=300
+)
+
+print("Saved: Hanle_substitute_30deg.png")
+
+print("2x2 Diagnosti panel, 30deg delta")
+# ============================================================
+# 2x2 DIAGNOSTIC PANEL
+# ============================================================
+
+fig, axes = plt.subplots(
+    2, 2,
+    figsize=(14, 14)
+)
+
+observer_setups = [
+
+    (0.0, np.pi/2,
+     r"$\chi_{\rm obs}=0,\ \gamma_{\rm obs}=90^\circ$"),
+
+    (np.pi/2, np.pi/2,
+     r"$\chi_{\rm obs}=90^\circ,\ \gamma_{\rm obs}=90^\circ$"),
+
+    (0.0, 0.0,
+     r"$\chi_{\rm obs}=0,\ \gamma_{\rm obs}=0^\circ$"),
+
+    (np.pi/2, 0.0,
+     r"$\chi_{\rm obs}=90^\circ,\ \gamma_{\rm obs}=0^\circ$")
+]
+
+for ax, (chi_obs, gamma_obs, panel_title) in zip(
+        axes.ravel(),
+        observer_setups):
+
+    # ========================================================
+    # DASHED CURVES : Hu = const
+    # ========================================================
+
+    for Hu in Hu_values:
+
+        PU = []
+        PQ = []
+
+        for chi_B in chi_B_grid:
+
+            pQ, pU = hanle_polarization_corrected(
+                Hu=Hu,
+                J_rad=Jrad,
+                theta_B=np.pi/2,
+                chi_B=chi_B,
+                theta_obs=np.pi/2,
+                chi_obs=chi_obs,
+                gamma_obs=gamma_obs
+            )
+
+            PU.append(pU)
+            PQ.append(pQ)
+
+        PU = np.array(PU)
+        PQ = np.array(PQ)
+
+        ax.plot(
+            PU,
+            PQ,
+            '--',
+            lw=1.5
+        )
+
+        if Hu < 1e6:
+
+            idx_lab = int(
+                label_fraction[Hu] * len(PU)
+            )
+
+            ax.text(
+                PU[idx_lab],
+                PQ[idx_lab],
+                f"{Hu:g}",
+                fontsize=8,
+                bbox=dict(
+                    facecolor='white',
+                    edgecolor='none',
+                    alpha=0.8
+                )
+            )
+
+    # ========================================================
+    # SOLID CURVES : chiB = const
+    # ========================================================
+
+    for chi_deg in chi_const_deg:
+
+        PU = []
+        PQ = []
+
+        for Hu in Hu_grid:
+
+            pQ, pU = hanle_polarization_corrected(
+                Hu=Hu,
+                J_rad=Jrad,
+                theta_B=np.pi/2,
+                chi_B=np.radians(chi_deg),
+                theta_obs=np.pi/2,
+                chi_obs=chi_obs,
+                gamma_obs=gamma_obs
+            )
+
+            PU.append(pU)
+            PQ.append(pQ)
+
+        PU = np.array(PU)
+        PQ = np.array(PQ)
+
+        ax.plot(
+            PU,
+            PQ,
+            '-',
+            lw=1.2
+        )
+
+        label_Hu = {
+        0:   1,
+        30:  2,
+        60:  3,
+        90:  4,
+        120: 5,
+        150: 6,
+        180: 7,
+        210: 8,
+        240: 9,
+        270: 10,
+        300: 11,
+        330: 12
+        }
+
+        idx_lab = np.argmin(
+            np.abs(
+                Hu_grid
+                - label_Hu[chi_deg]
+            )
+        )
+
+        ax.text(
+            PU[idx_lab],
+            PQ[idx_lab],
+            f"{chi_deg}°",
+            fontsize=8,
+            bbox=dict(
+                facecolor='white',
+                edgecolor='none',
+                alpha=0.8
+            )
+        )
+
+    ax.set_title(panel_title)
+
+    ax.set_xlabel(r"$U/I$")
+    ax.set_ylabel(r"$Q/I$")
+
+    ax.grid(True, alpha=0.3)
+
+    ax.set_aspect("equal")
+
+plt.suptitle(
+    r"Hanle diagram diagnostic ($\theta_B=90^\circ$)",
+    fontsize=16
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    "Hanle_2x2_diagnostic_30deg.png",
+    dpi=300
+)
+
+# Testing delta
+J = radiation_tensor(hR)
+Jvert = np.zeros(5,dtype=complex)
+Jvert[idx(0)] = J[(2,0)]
+Jdelta = wigner_D2(0.0, np.radians(30), 0.0) @ Jvert
+for Q in [-2,-1,0,1,2]:
+    print(Q, Jdelta[idx(Q)])
+
+for delta in [0, 30]:
+    J = radiation_tensor_delta(
+        hR,
+        np.radians(delta)
+    )
+
+    print()
+    print("delta =", delta)
+
+    for Q in [-2,-1,0,1,2]:
+        print(Q, J[(2,Q)])
+Jrad = radiation_tensor_delta(hR, np.radians(30))
+for chi in [0,30,60,90,120,150,180]:
+
+    pQ, pU = hanle_polarization_corrected(
+        Hu=0.0,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi),
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=np.pi/2
+    )
+
+    print(chi, pQ, pU)
+
+rho20 = Jrad_to_array(Jrad)
+epsQ = 0
+epsU = 0
+for i,Q in enumerate([-2,-1,0,1,2]):
+    epsQ += T(1,2,Q,np.pi/2,0,np.pi/2) * rho20[i]
+    epsU += T(2,2,Q,np.pi/2,0,np.pi/2) * rho20[i]
+
+print(epsQ)
+print(epsU)
+
+print("---------")
+hR = 0.073
+J0 = radiation_tensor_delta(hR, np.radians(0))
+J30 = radiation_tensor_delta(hR, np.radians(30))
+S0 = sum(abs(J0[(2,Q)])**2 for Q in range(-2,3))
+S30 = sum(abs(J30[(2,Q)])**2 for Q in range(-2,3))
+print(S0)
+print(S30)
+
+def tP_observer(i):
+
+    t = {}
+
+    for P in [-2,-1,0,1,2]:
+
+        t[P] = T(
+            i,
+            2,
+            P,
+            theta_obs,
+            chi_obs,
+            gamma_obs
+        )
+
+    return t
+
+def D_obs_to_mag(delta):
+
+    return wigner_D2(
+        -np.pi/2,
+        -np.pi/2 + delta,
+        0.0
+    )
+
+def D_B(theta_B, chi_B, gamma_B):
+
+    return wigner_D2(
+        chi_B,
+        theta_B,
+        gamma_B
+    )
+
+def TQ_LL04(
+    i,
+    delta,
+    theta_B,
+    chi_B,
+    gamma_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs
+):
+
+    tP = {}
+
+    for P in [-2,-1,0,1,2]:
+
+        tP[P] = T(
+            i,
+            2,
+            P,
+            theta_obs,
+            chi_obs,
+            gamma_obs
+        )
+
+    Dtot = (
+        wigner_D2(
+            -np.pi/2,
+            -np.pi/2 + delta,
+            0.0
+        )
+        @
+        wigner_D2(
+            chi_B,
+            theta_B,
+            gamma_B
+        )
+    )
+
+    TQ = {}
+
+    for Q in [-2,-1,0,1,2]:
+
+        s = 0.0j
+
+        for P in [-2,-1,0,1,2]:
+
+            s += (
+                tP[P]
+                *
+                Dtot[P+2,Q+2]
+            )
+
+        TQ[Q] = s
+
+    return TQ
+
+
+# ------------------------------------------------------------
+# Hanle point computed with LL04 Eq. (13.17)
+# ------------------------------------------------------------
+
+
+def hanle_point_LL04(
+    Hu,
+    theta_B,
+    chi_B,
+    gamma_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    hR
+):
+
+    # radiation tensor
+    J = radiation_tensor(hR)
+
+    Jvert, Jmag = J2_magnetic(
+    hR,
+    theta_B,
+    chi_B
+    )
+    rho00 = J[(0,0)]
+    rho_mag = rhoKQ_hanle_two_level(
+        Jmag,
+        Hu
+    )
+    rho20 = rho_mag
+
+    # LL04 Eq. (13.17)
+    TQgeom = TQ_LL04(
+        1,                      # Stokes Q
+        delta=0.0,
+        theta_B=theta_B,
+        chi_B=chi_B,
+        gamma_B=gamma_B,
+        theta_obs=theta_obs,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs
+    )
+
+    TUgeom = TQ_LL04(
+        2,                      # Stokes U
+        delta=0.0,
+        theta_B=theta_B,
+        chi_B=chi_B,
+        gamma_B=gamma_B,
+        theta_obs=theta_obs,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs
+    )
+
+    epsQ = 0j
+    epsU = 0j
+    epsI = 0j
+
+    for Q in [-2,-1,0,1,2]:
+
+        epsQ += (
+            (-1)**Q
+            * TQgeom[Q]
+            * rho20[qidx(-Q)]
+        )
+
+        epsU += (
+            (-1)**Q
+            * TUgeom[Q]
+            * rho20[qidx(-Q)]
+        )
+
+    # intensity
+    epsI = rho00
+
+    pQ = np.real(epsQ/epsI)
+    pU = np.real(epsU/epsI)
+
+    return pQ, pU
+
+fig, axs = plt.subplots(
+    2,
+    2,
+    figsize=(12,12)
+)
+
+panels = [
+
+    (0.0,       np.pi/2,
+     r'$\chi_{\rm obs}=0,\ \gamma_{\rm obs}=90^\circ$'),
+
+    (np.pi/2,   np.pi/2,
+     r'$\chi_{\rm obs}=90^\circ,\ \gamma_{\rm obs}=90^\circ$'),
+
+    (0.0,       0.0,
+     r'$\chi_{\rm obs}=0,\ \gamma_{\rm obs}=0^\circ$'),
+
+    (np.pi/2,   0.0,
+     r'$\chi_{\rm obs}=90^\circ,\ \gamma_{\rm obs}=0^\circ$')
+]
+
+theta_B = np.pi/2
+chi_B   = 0.0
+gamma_B = 0.0
+
+theta_obs = np.pi/2
+
+Hu_values = [
+    0.08,
+    0.16,
+    0.25,
+    0.36,
+    0.50,
+    0.69,
+    0.98,
+    1.54,
+    3.16
+]
+
+thetaB_values = np.radians(
+    [0,30,60,90,120,150,180]
+)
+
+for ax, (chi_obs,gamma_obs,title) in zip(
+        axs.flat,
+        panels):
+
+    #
+    # constant Hu curves
+    #
+    for Hu in Hu_values:
+
+        Qcurve = []
+        Ucurve = []
+
+        for thB in thetaB_values:
+
+            q,u = hanle_point_LL04(
+                Hu,
+                thB,
+                chi_B,
+                gamma_B,
+                theta_obs,
+                chi_obs,
+                gamma_obs,
+                hR
+            )
+
+            Ucurve.append(u)
+            Qcurve.append(q)
+
+        ax.plot(
+            Ucurve,
+            Qcurve,
+            '--'
+        )
+
+        mid = len(Ucurve)//2
+
+        ax.text(
+            Ucurve[mid],
+            Qcurve[mid],
+            f'{Hu:g}',
+            fontsize=9
+        )
+
+    #
+    # constant theta_B curves
+    #
+    Hu_scan = np.logspace(
+        np.log10(0.08),
+        np.log10(3.16),
+        100
+    )
+
+    for thB in thetaB_values:
+
+        Ucurve = []
+        Qcurve = []
+
+        for Hu in Hu_scan:
+
+            q,u = hanle_point_LL04(
+                Hu,
+                thB,
+                chi_B,
+                gamma_B,
+                theta_obs,
+                chi_obs,
+                gamma_obs,
+                hR
+            )
+
+            Ucurve.append(u)
+            Qcurve.append(q)
+
+        ax.plot(
+            Ucurve,
+            Qcurve,
+            '-'
+        )
+
+        idx = 50
+
+        ax.text(
+            Ucurve[idx],
+            Qcurve[idx],
+            f'{int(np.degrees(thB))}°',
+            fontsize=9
+        )
+
+    ax.set_title(title)
+
+    ax.set_xlabel(r'$U/I$')
+    ax.set_ylabel(r'$Q/I$')
+
+    ax.grid(True)
+
+plt.suptitle(
+    r'Hanle diagram diagnostic ($\theta_B=90^\circ$)'
+)
+
+plt.tight_layout()
+plt.savefig("Hanle_T.png")
