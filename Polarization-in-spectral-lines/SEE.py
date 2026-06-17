@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -108,11 +108,14 @@ def hanle_polarization_corrected(
     
     Physics: Hanle depolarization in the magnetic frame, then rotate back to observer frame.
     """
+    #print("\nJarr entering hanle_polarization_corrected")
 
-    
     Jarr = Jrad_to_array(Jrad)
 
-    rho00 = J_rad[(0,0)]
+    #for Q in [-2,-1,0,1,2]:
+    #    print(Q, Jarr[idx(Q)])
+    
+    rho00 = Jrad[(0,0)]
     
     # Build Hanle diagonal matrix
     Qs = np.array([-2, -1, 0, 1, 2])
@@ -149,7 +152,7 @@ def hanle_polarization_corrected(
 
     for i, Q in enumerate(Qs):
 
-        rho = rho20[idx(-Q)]
+        rho = rho20[idx(Q)]
 
         phase = (-1.0)**Q
 
@@ -2506,6 +2509,7 @@ print("---------")
 hR = 0.073
 J0 = radiation_tensor_delta(hR, np.radians(0))
 J30 = radiation_tensor_delta(hR, np.radians(30))
+Jm30 = radiation_tensor_delta(hR, np.radians(-30.0))
 S0 = sum(abs(J0[(2,Q)])**2 for Q in range(-2,3))
 S30 = sum(abs(J30[(2,Q)])**2 for Q in range(-2,3))
 print(S0)
@@ -2524,6 +2528,315 @@ for Hu in [1e-6,1e-4,1e-2,0.1,1.0,10,1e6]:
             gamma_obs=np.pi/2
         )
         print(Hu,chi_B,pQ,pU)
+plt.figure()
+for chi in np.arange(0,360,30):
+    pQ,pU = hanle_polarization_corrected(
+        Hu=1e6,
+        J_rad=Jrad,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi),
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=np.pi/2
+    )
+    plt.plot(pU,pQ,'ko')
+    plt.text(pU,pQ,f"{chi}")
+plt.savefig("Fig_13_4_test.png", dpi = 300)
+
+for delta in [+30, -30]:
+    J = radiation_tensor_delta(hR, np.radians(delta))
+    print(delta)
+    for Q in [-2,-1,0,1,2]:
+        print(Q, J[(2,Q)])
+
+print("-----------------------")
+for chi in [15, 37, 73, 111]:
+
+    pQ1,pU1 = hanle_polarization_corrected(
+        Hu=0.5,
+        J_rad=J30,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi),
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=np.pi/2
+    )
+
+    pQ2,pU2 = hanle_polarization_corrected(
+        Hu=0.5,
+        J_rad=Jm30,
+        theta_B=np.pi/2,
+        chi_B=np.radians(chi),
+        theta_obs=np.pi/2,
+        chi_obs=0.0,
+        gamma_obs=np.pi/2
+    )
+
+    print()
+    print("chi =",chi)
+    print(" +30 :",pQ1,pU1)
+    print(" -30 :",pQ2,pU2)
+    print(" diff:",pQ1-pQ2,pU1-pU2)
+print("-------------------")
+Hu      = 0.5
+theta_B = np.pi/2
+chi_B   = np.radians(37)
+theta_obs = np.pi/2
+chi_obs   = 0.0
+gamma_obs = np.pi/2
+
+Jarr = Jrad_to_array(J30)
+
+D = wigner_D2(chi_B, theta_B, 0.0)
+
+Qs = np.array([-2,-1,0,1,2])
+
+H_diag = np.diag(
+    [1/(1+1j*Q*Hu) for Q in Qs]
+)
+
+H_full = D @ H_diag @ D.conj().T
+
+rho20 = H_full @ Jarr
+
+print()
+print("rho20:")
+for Q in Qs:
+    print(Q, rho20[idx(Q)])
+
+epsQ = 0j
+epsU = 0j
+
+print("\nContributions:")
+print("--------------------------------")
+
+for i,Q in enumerate(Qs):
+
+    rho = rho20[idx(-Q)]
+
+    phase = (-1.0)**Q
+
+    termQ = (
+        phase
+        * T(1,2,Q,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * rho
+    )
+
+    termU = (
+        phase
+        * T(2,2,Q,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * rho
+    )
+
+    print(
+        f"Q={Q:+d}",
+        "rho=",rho,
+        "termQ=",termQ,
+        "termU=",termU
+    )
+
+    epsQ += termQ
+    epsU += termU
+
+print()
+print("epsQ =",epsQ)
+print("epsU =",epsU)
+
+print("---------------------")
+Jarr = Jrad_to_array(Jm30)
+
+D = wigner_D2(chi_B, theta_B, 0.0)
+
+Qs = np.array([-2,-1,0,1,2])
+
+H_diag = np.diag(
+    [1/(1+1j*Q*Hu) for Q in Qs]
+)
+
+H_full = D @ H_diag @ D.conj().T
+
+rho20 = H_full @ Jarr
+
+print()
+print("rho20:")
+for Q in Qs:
+    print(Q, rho20[idx(Q)])
+
+epsQ = 0j
+epsU = 0j
+
+print("\nContributions:")
+print("--------------------------------")
+
+for i,Q in enumerate(Qs):
+
+    rho = rho20[idx(-Q)]
+
+    phase = (-1.0)**Q
+
+    termQ = (
+        phase
+        * T(1,2,Q,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * rho
+    )
+
+    termU = (
+        phase
+        * T(2,2,Q,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * rho
+    )
+
+    print(
+        f"Q={Q:+d}",
+        "rho=",rho,
+        "termQ=",termQ,
+        "termU=",termU
+    )
+
+    epsQ += termQ
+    epsU += termU
+
+print()
+print("epsQ =",epsQ)
+print("epsU =",epsU)
+
+
+print("------------------")
+print("\n===== J30 =====")
+
+q, u = hanle_polarization_corrected(
+    Hu=0.5,
+    J_rad=J30,
+    theta_B=np.pi/2,
+    chi_B=np.radians(37),
+    theta_obs=np.pi/2,
+    chi_obs=0.0,
+    gamma_obs=np.pi/2
+)
+print(q,u)
+
+print("\n===== Jm30 =====")
+
+q, u = hanle_polarization_corrected(
+    Hu=0.5,
+    J_rad=Jm30,
+    theta_B=np.pi/2,
+    chi_B=np.radians(37),
+    theta_obs=np.pi/2,
+    chi_obs=0.0,
+    gamma_obs=np.pi/2
+)
+print(q,u)
+
+print("----------------------")
+J30  = radiation_tensor_delta(hR, np.radians(30))
+Jm30 = radiation_tensor_delta(hR, np.radians(-30))
+
+print("\nJ30")
+for Q in [-2,-1,0,1,2]:
+    print(Q, J30[(2,Q)])
+
+print("\nJm30")
+for Q in [-2,-1,0,1,2]:
+    print(Q, Jm30[(2,Q)])
+
+theta_obs = np.pi/2
+chi_B = 0.0
+gamma_obs = np.pi/2
+J30 = radiation_tensor_delta(hR, np.radians(30))
+Jm30 = radiation_tensor_delta(hR, np.radians(-30))
+for name,J in [("J30",J30),("Jm30",Jm30)]:
+
+    print()
+    print("=====",name,"=====")
+
+    Jarr = Jrad_to_array(J)
+
+    rho20 = H_full @ Jarr
+
+    for Q in [-2,-1,0,1,2]:
+        print(Q, rho20[idx(Q)])
+
+    epsQ = 0j
+    epsU = 0j
+
+    for Q in [-2,-1,0,1,2]:
+
+        rho = rho20[idx(-Q)]
+
+        epsQ += (
+            (-1)**Q
+            * T(1,2,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs)
+            * rho
+        )
+
+        epsU += (
+            (-1)**Q
+            * T(2,2,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs)
+            * rho
+        )
+
+    print("epsQ =",epsQ)
+    print("epsU =",epsU)
+
+plt.figure()
+Hu_grid = np.logspace(-6, 2, 200)
+
+Q30 = []
+U30 = []
+
+Qm30 = []
+Um30 = []
+
+for Hu in Hu_grid:
+
+    q,u = hanle_polarization_corrected(
+        Hu,
+        J30,
+        np.pi/2,
+        np.radians(37),
+        np.pi/2,
+        0.0,
+        np.pi/2
+    )
+
+    Q30.append(q)
+    U30.append(u)
+
+    q,u = hanle_polarization_corrected(
+        Hu,
+        Jm30,
+        np.pi/2,
+        np.radians(37),
+        np.pi/2,
+        0.0,
+        np.pi/2
+    )
+
+    Qm30.append(q)
+    Um30.append(u)
+plt.plot(U30,Q30,label="+30")
+plt.plot(Um30,Qm30,label="-30")
+plt.legend()
+plt.savefig("Test_plusminus.png", dpi = 300)
 
 def tP_observer(i):
 
