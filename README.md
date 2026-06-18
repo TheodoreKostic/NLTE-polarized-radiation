@@ -33,3 +33,10 @@ for polarized radiation field due to presence of magnetic field.
   <li> Separated J computation, Hanle parameter, rotation and density matrix into different functions. </li>
   <li> Inspiration Polarization in Spectral Lines by Landi Degl'Innocenti & Landolfi (2004). </li>
 </ul>
+
+`19. 06. 2026.`
+<ul>
+  <li> Separating Hanle-, radiation- and profile-related objects into several files.  </li>
+  <li> Next goal is to code the Eq. (10.40).</li>
+  <li> Optically thin enviroment → RTE formal solution can be approximated. </li>
+</ul>
