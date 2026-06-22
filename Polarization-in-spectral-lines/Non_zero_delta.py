@@ -1439,3 +1439,198 @@ for Q in Qs:
 print("epsI0 =", epsI0)
 print("epsI2 =", epsI2)
 print("epsI total =", epsI0 + epsI2)
+
+# Testing profile from the book
+
+from Profile_fun import *
+from Hanle_fun import *
+from Radiation_fun import *
+from sympy.physics.wigner import wigner_3j
+x = np.linspace(-5,5,401)
+
+P00 = Phi_generalized(
+    x,
+    K=0,
+    Kp=0,
+    Q=0,
+    vH=1.0
+)
+
+P20 = Phi_generalized(
+    x,
+    K=2,
+    Kp=0,
+    Q=0,
+    vH=1.0
+)
+
+P22 = Phi_generalized(
+    x,
+    K=2,
+    Kp=2,
+    Q=0,
+    vH=1.0
+)
+
+plt.figure()
+plt.xlabel("Reduced wavelength")
+plt.ylabel("Phi")
+plt.plot(x,P00, label = "P00")
+plt.plot(x,P20, label = "P20")
+plt.plot(x,P22, label = "P22")
+plt.legend()
+plt.savefig("Mock_profile.png", dpi = 300)
+print(P00.min(), P00.max())
+
+vH = 1.0
+phi_sum = (
+    phi_doppler(x + vH)
+    + phi_doppler(x)
+    + phi_doppler(x - vH)
+)
+
+phi_sum /= phi_sum.max()
+
+P00n = P00 / P00.max()
+
+plt.figure()
+plt.plot(x, P00n, label="P00")
+plt.plot(x, phi_sum, "--", label="sum of Zeeman profiles")
+plt.legend()
+plt.savefig("Mock_comparison.png", dpi = 300)
+
+print("---------------------")
+for K in [0,2]:
+    for Kp in [0,2]:
+        for Q in [-2,-1,0,1,2]:
+            val = np.max(
+                np.abs(
+                    Phi_generalized(
+                        x,K,Kp,Q,vH=1.0
+                    )
+                )
+            )
+            print(K,Kp,Q,val)
+
+print("---------------------")
+for K in [0, 2]:
+    for Kp in [0, 2]:
+        for vH in [0.0, 0.5, 2.0]:
+
+            P = Phi_generalized(
+                x,
+                K=K,
+                Kp=Kp,
+                Q=0,
+                vH=vH
+            )
+
+            val = np.max(np.abs(P))
+
+            print(
+                f"K={K}  Kp={Kp}  Q=0  vH={vH}  max={val}"
+            )
+print("***********************************")
+for K in [0,2]:
+    for Kp in [0,2]:
+
+        Qmax = min(K, Kp)
+
+        for Q in range(-Qmax, Qmax+1):
+
+            for vH in [0.0, 0.5, 2.0]:
+
+                P = Phi_generalized(
+                    x,
+                    K=K,
+                    Kp=Kp,
+                    Q=Q,
+                    vH=vH
+                )
+
+                print(
+                    K, Kp, Q, vH,
+                    np.max(np.abs(P))
+                )
+
+print("DEBUG")
+Phi_generalized(
+    np.array([0.0]),
+    K=2,
+    Kp=2,
+    Q=2,
+    vH=1.0
+)
+'''
+print(
+    "direct tests:",
+    W3(1,0,1,-1,0,1),
+    W3(1,0,1,0,0,0),
+    W3(1,0,1,1,0,-1)
+)
+
+print(
+    phi_transition(
+        np.array([0.0]),
+        +1,
+        0,
+        1.0
+    )
+)
+
+print(
+    phi_transition(
+        np.array([0.0]),
+        -1,
+        0,
+        1.0
+    )
+)'''
+print("HEY")
+for Q in [-2,-1,0,1,2]:
+    val = np.max(
+        np.abs(
+            Phi_generalized(
+                x,
+                K=2,
+                Kp=2,
+                Q=Q,
+                vH=1.0
+            )
+        )
+    )
+
+    print(Q, val)
+
+print("Amplitude")
+for Q in [-2,-1,0,1,2]:
+    P = Phi_generalized(
+        x,
+        K=2,
+        Kp=2,
+        Q=Q,
+        vH=1.0
+    )
+
+    print(
+        Q,
+        np.max(np.abs(P))
+    )
+
+for Q in [-2,-1,0,1,2]:
+    y = Phi_generalized(
+        np.array([0.0]),
+        K=2,
+        Kp=2,
+        Q=Q,
+        vH=1.0
+    )
+    print(Q, y[0])
+
+for Q in [-2,-1,0,1,2]:
+    prof = Phi_generalized(x,2,2,Q,vH=0.85)
+
+    plt.figure()
+    plt.plot(x, prof)
+    plt.title(f"Phi22 Q={Q}")
+    plt.savefig("Phi22 Q="+str(Q)+".png", dpi = 300)
