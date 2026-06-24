@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -1627,10 +1627,426 @@ for Q in [-2,-1,0,1,2]:
     )
     print(Q, y[0])
 
+plt.figure()
 for Q in [-2,-1,0,1,2]:
-    prof = Phi_generalized(x,2,2,Q,vH=0.85)
+    prof = Phi_generalized(x,2,2,Q,vH=2.0)
+    plt.plot(x, prof, label = f"Phi22 Q={Q}")
+    plt.title("Phi22")
+plt.legend()
+plt.savefig("Phi22_Qs_png", dpi = 300)
+    
 
-    plt.figure()
-    plt.plot(x, prof)
-    plt.title(f"Phi22 Q={Q}")
-    plt.savefig("Phi22 Q="+str(Q)+".png", dpi = 300)
+def stokes_profile_22_only(
+x_grid,
+Hu,
+vH,
+J_rad,
+theta_B,
+chi_B,
+theta_obs,
+chi_obs,
+gamma_obs=np.pi/2):
+
+
+    Jarr = Jrad_to_array(J_rad)
+
+    rho20 = apply_hanle(
+        Jarr,
+        Hu,
+        theta_B,
+        chi_B
+    )
+
+    Qs = np.array([-2,-1,0,1,2])
+
+    epsI = np.zeros_like(x_grid, dtype=complex)
+    epsQ = np.zeros_like(x_grid, dtype=complex)
+    epsU = np.zeros_like(x_grid, dtype=complex)
+
+    for Q in Qs:
+
+        rho = rho20[idx(-Q)]
+
+        phase = (-1.0)**Q
+
+        Phi22 = Phi_generalized(
+            x_grid,
+            K=2,
+            Kp=2,
+            Q=Q,
+            vH=vH
+        )
+
+        epsI += (
+            phase
+            * Phi22
+            * T(
+                0,
+                2,
+                Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho
+        )
+
+        epsQ += (
+            phase
+            * Phi22
+            * T(
+                1,
+                2,
+                Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho
+        )
+
+        epsU += (
+            phase
+            * Phi22
+            * T(
+                2,
+                2,
+                Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho
+        )
+
+    return (
+        np.real(epsI),
+        np.real(epsQ),
+        np.real(epsU)
+    )
+
+x = np.linspace(-5,5,401)
+Jrad_0 = radiation_tensor(hR=0.073)
+I22, Q22, U22 = stokes_profile_22_only(
+x_grid=x,
+Hu=1.0,
+vH=0.002,
+J_rad=Jrad_0,
+theta_B=np.pi/2,
+chi_B=0.0,
+theta_obs=np.pi/2,
+chi_obs=0.0
+)
+
+plt.figure(figsize=(8,5))
+plt.plot(x, I22, label="I")
+plt.plot(x, Q22, label="Q")
+plt.plot(x, U22, label="U")
+plt.legend()
+plt.grid()
+plt.savefig("222.png", dpi = 300)
+
+def stokes_I_22_only(
+x_grid,
+Hu,
+vH,
+J_rad,
+theta_B,
+chi_B,
+theta_obs,
+chi_obs,
+gamma_obs=np.pi/2):
+
+    
+    Jarr = Jrad_to_array(J_rad)
+
+    rho20 = apply_hanle(
+        Jarr,
+        Hu,
+        theta_B,
+        chi_B
+    )
+
+    Qs = np.array([-2,-1,0,1,2])
+
+    I = np.zeros_like(x_grid, dtype=float)
+
+    for ix, x in enumerate(x_grid):
+
+        epsI = 0.0j
+
+        for Q in Qs:
+
+            rho = rho20[idx(-Q)]
+
+            Phi22 = Phi_generalized(
+                x,
+                K=2,
+                Kp=2,
+                Q=Q,
+                vH=vH
+            )
+
+            epsI += (
+                (-1.0)**Q
+                * Phi22
+                * T(
+                    0,      # Stokes I
+                    2,
+                    Q,
+                    theta_obs,
+                    chi_obs,
+                    gamma_obs
+                )
+                * rho
+            )
+
+        I[ix] = np.real(epsI)
+
+    return I
+
+x = np.linspace(-5,5,401)
+
+I22 = stokes_I_22_only(
+x,
+Hu=1.0,
+vH=0.002,
+J_rad=Jrad_0,
+theta_B=np.pi/2,
+chi_B=0.0,
+theta_obs=np.pi/2,
+chi_obs=0.0
+)
+
+plt.figure()
+plt.plot(x, I22)
+plt.xlabel(r'$(\nu-\nu_0)/\Delta\nu_D$')
+plt.ylabel(r'$I_{22}$')
+plt.title("22 contribution only")
+plt.grid(True)
+plt.savefig("I22.png", dpi = 300)
+
+
+x0 = np.array([0.0])   # line center
+
+for Q in [-2,-1,0,1,2]:
+
+    phi = Phi_generalized(
+        x0,
+        K=2,
+        Kp=2,
+        Q=Q,
+        vH=2.0
+    )[0]
+
+    rho = rho20[idx(-Q)]
+
+    tQ = T(
+        1,      # Stokes Q
+        2,
+        Q,
+        theta_obs,
+        chi_obs,
+        gamma_obs
+    )
+
+    contrib = ((-1)**Q) * phi * tQ * rho
+
+    print(
+        f"Q={Q:+d}",
+        f"Phi={phi:+.6e}",
+        f"rho={rho}",
+        f"T={tQ}",
+        f"contrib={contrib}"
+    )
+
+epsQ = 0.0 + 0.0j
+
+for Q in [-2,-1,0,1,2]:
+
+    term = (
+        (-1)**Q
+        * Phi_generalized(
+            x0,
+            2,
+            2,
+            Q,
+            vH=2.0
+        )[0]
+        * T(
+            1,
+            2,
+            Q,
+            theta_obs,
+            chi_obs,
+            gamma_obs
+        )
+        * rho20[idx(-Q)]
+    )
+
+    print(f"Q={Q:+d}   term={term}")
+
+    epsQ += term
+
+print("epsQ =", epsQ)
+
+for Q in [-2,-1,0,1,2]:
+    print(
+        Q,
+        np.max(np.abs(
+            Phi_generalized(x,2,2,Q,vH=2)
+        ))
+    )
+
+for Q in [-2,-1,0,1,2]:
+    print(
+        Q,
+        np.trapezoid(
+            Phi_generalized(x,2,2,Q,vH=2),
+            x
+        )
+    )
+
+
+epsQ_Q0 = []
+epsQ_Q2 = []
+summ = []
+x = np.linspace(-4,4,501)
+for xx in x:
+
+    term0 = (
+        Phi_generalized(xx,2,2,0,vH)
+        * T(1,2,0,theta_obs,chi_obs,gamma_obs)
+        * rho20[idx(0)]
+    )
+
+    term2 = (
+        Phi_generalized(xx,2,2,2,vH)
+        * T(1,2,2,theta_obs,chi_obs,gamma_obs)
+        * rho20[idx(-2)]
+    )
+
+    termm2 = (
+        Phi_generalized(xx,2,2,-2,vH)
+        * T(1,2,-2,theta_obs,chi_obs,gamma_obs)
+        * rho20[idx(2)]
+    )
+
+    epsQ_Q0.append(np.real(term0))
+    epsQ_Q2.append(np.real(term2 + termm2))
+    summ.append(np.real(term0 + term2 + termm2))
+plt.figure()
+plt.plot(x, epsQ_Q0, label="Q=0 contribution")
+plt.plot(x, epsQ_Q2, label="Q=±2 contribution")
+plt.plot(x, summ, label = "sum")
+plt.legend()
+plt.savefig("Q_freq_dep.png", dpi = 300)
+
+print("++++++++++++++++++++++++++++++++++++")
+xgrid = np.linspace(-5,5,401)
+
+I_prof = np.zeros_like(xgrid)
+Q_prof = np.zeros_like(xgrid)
+U_prof = np.zeros_like(xgrid)
+V_prof = np.zeros_like(xgrid)
+
+theta_B = np.pi/2
+chi_B = 0.0
+theta_obs = np.pi/2,
+chi_obs = 0.0
+
+for ix, x in enumerate(xgrid):
+    Jarr = Jrad_to_array(Jrad_0)
+    rho00 = Jrad_0[(0,0)]
+    rho20 = apply_hanle(
+        Jarr,
+        Hu,
+        theta_B,
+        chi_B
+    )
+    epsI = 0.0+0j
+    epsQ = 0.0+0j
+    epsU = 0.0+0j
+    epsV = 0.0+0j
+    for K in [0, 1, 2]:
+        for Kp in [0, 1, 2]:
+            for Q in [-2,-1,0,1,2]:
+
+                rho = rho20[idx(-Q)]
+
+                phi22 = Phi_generalized(
+                    np.array([x]),
+                    K=K,
+                    Kp=Kp,
+                    Q=Q,
+                    vH=0.002
+                )[0]
+
+                epsI += (
+                    phi22
+                    * (-1.0)**Q
+                    * T(0,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * rho
+                )
+
+                epsQ += (
+                    phi22
+                    * (-1.0)**Q
+                    * T(1,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * rho
+                )
+
+                epsU += (
+                    phi22
+                    * (-1.0)**Q
+                    * T(2,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * rho
+                )
+                
+                epsV +=(
+                    phi22
+                    * (-1.0)**Q
+                    * T(3,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * rho
+                )
+            print("K = {}, Kp = {}, Q = {}".format(K, Kp, Q))
+            print("Eps I", np.real(epsI))
+            print("Eps Q", np.real(epsQ))
+            print("Eps U", np.real(epsU))
+            print(np.shape(np.real(epsV)))
+            print("Eps V", np.real(epsV))
+            '''
+            # all Ks
+            if K == 2:
+                I_prof[ix] = (np.real(epsI[0]))
+                Q_prof[ix] = (np.real(epsQ[0]))
+                U_prof[ix] = (np.real(epsU[0]))
+            elif K == 1:
+                V_prof[ix] = (np.real(epsV[0]))
+            else:
+                I_prof[ix] = (np.real(epsI))
+                Q_prof[ix] = (np.real(epsQ))
+                U_prof[ix] = (np.real(epsU))
+                V_prof[ix] = (np.real(epsV))
+            '''
+            I_prof[ix] = (np.real(epsI[0]))
+            Q_prof[ix] = (np.real(epsQ[0]))
+            U_prof[ix] = (np.real(epsU[0]))
+            V_prof[ix] = np.real(epsV)
+
+fig, ax = plt.subplots(2,2,figsize=(10,8))
+
+ax[0,0].plot(xgrid,I_prof)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Q_prof)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,U_prof)
+ax[1,0].set_title("U")
+
+ax[1,1].plot(xgrid,V_prof)
+ax[1,1].set_title("V")
+
+plt.tight_layout()
+plt.savefig("Stokes_try.png", dpi = 300)

@@ -97,7 +97,7 @@ def Phi_generalized(x, K, Kp, Q, vH):
                         f"coeff={term:+.8f}"
                     )
             '''
-            
+            '''
             if K == 2 and Kp == 2 and Q == 2:
                 coeff = (
             (-1)**(1 + Ju - Mu + qp)
@@ -113,7 +113,7 @@ def Phi_generalized(x, K, Kp, Q, vH):
                     "Mup =", Mup,
                     "coeff =", coeff
                 )
-                
+                '''
             profile = 0.5*(
                 phi_transition(x, Mu, Ml, vH)
                 +
