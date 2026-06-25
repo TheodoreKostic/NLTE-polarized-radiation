@@ -58,7 +58,7 @@ def Phi_generalized(x, K, Kp, Q, vH):
     )
 
     Phi = 0.0*np.asarray(x, dtype=float)
-
+    # Loop through q and qp
     for Mu in (-1,0,1):
         for Mup in (-1,0,1):
 
@@ -97,8 +97,8 @@ def Phi_generalized(x, K, Kp, Q, vH):
                         f"coeff={term:+.8f}"
                     )
             '''
-            '''
-            if K == 2 and Kp == 2 and Q == 2:
+            
+            if K == 2 and Kp == 2 and Q == 0:
                 coeff = (
             (-1)**(1 + Ju - Mu + qp)
             * W3(Ju,Jl,1,-Mu,Ml,q)
@@ -107,13 +107,17 @@ def Phi_generalized(x, K, Kp, Q, vH):
             * W3(1,1,Kp,q,-qp,-Q)
                 )
 
-                if abs(coeff) > 1e-12:
-                    print(
+               
+                print(
+                    "K = ", K,
+                    "Kp = ", Kp,
+                    "Q = ", Q,
                     "Mu =", Mu,
                     "Mup =", Mup,
-                    "coeff =", coeff
+                    "coeff =", coeff,
+                    "vH = ", vH
                 )
-                '''
+                
             profile = 0.5*(
                 phi_transition(x, Mu, Ml, vH)
                 +
