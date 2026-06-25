@@ -3,8 +3,9 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -2170,7 +2171,7 @@ def stokes_profiles_LL04(
     # --------------------------------------
 
     J00 = Jrad[(0,0)]
-
+    print("J00 = ", J00)
     Jvert = Jrad_to_array(Jrad)
 
     # full Hanle solution:
@@ -2213,7 +2214,7 @@ def stokes_profiles_LL04(
             Q=0,
             vH=vH
         )[0]
-
+        Phi00 = phi_doppler(x)
         epsI += (
             Phi00
             * T(
@@ -2238,7 +2239,7 @@ def stokes_profiles_LL04(
             Q=0,
             vH=vH
         )[0]
-
+        Phi02 = phi_doppler(x)
         epsI += (
             Phi02
             * T(
@@ -2292,7 +2293,7 @@ def stokes_profiles_LL04(
             Q=0,
             vH=vH
         )[0]
-
+        Phi20 = phi_doppler(x)
         rho20 = rho[idx(0)]
 
         epsI += (
@@ -2325,7 +2326,7 @@ def stokes_profiles_LL04(
                 Q=Q,
                 vH=vH
             )[0]
-
+            Phi22 = phi_doppler(x)
             epsI += (
                 phase
                 * Phi22
@@ -2402,3 +2403,26 @@ ax[1,1].axis("off")
 
 plt.tight_layout()
 plt.savefig("Stokes_try_noV.png", dpi = 300)
+
+print("max Q/I = ", np.max(Q/I))
+print("max U/I = ", np.max(np.abs(U/I)))
+
+print("Imax =", np.max(I))
+print("Qmax =", np.max(Q))
+print("Umax =", np.max(U))
+
+ix = np.argmax(I)
+
+print("At line center:")
+print("I =", I[ix])
+print("Q =", Q[ix])
+print("U =", U[ix])
+print("Q/I =", Q[ix]/I[ix])
+print("U/I =", U[ix]/I[ix])
+
+print(T(0,0,0,np.pi/2,0,np.pi/2))
+print(T(1,2,0,np.pi/2,0,np.pi/2))
+print(T(2,2,0,np.pi/2,0,np.pi/2))
+
+for Q in [-2,-1,0,1,2]:
+    print(Q, T(1,2,Q,np.pi/2,0,np.pi/2))
