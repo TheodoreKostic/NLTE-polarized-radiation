@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -2050,3 +2050,355 @@ ax[1,1].set_title("V")
 
 plt.tight_layout()
 plt.savefig("Stokes_try.png", dpi = 300)
+
+def emissivity_profile(
+        x,
+        rho20,
+        theta_obs,
+        chi_obs,
+        vH):
+
+    epsI = 0.0+0j
+    epsQ = 0.0+0j
+    epsU = 0.0+0j
+
+    for Q in [-2,-1,0,1,2]:
+
+        Phi = Phi_generalized(
+            np.array([x]),
+            K=2,
+            Kp=2,
+            Q=Q,
+            vH=vH
+        )[0]
+
+        rho = rho20[idx(-Q)]
+
+        phase = (-1)**Q
+
+        epsI += (
+            phase
+            * T(0,2,Q,
+                theta_obs,
+                chi_obs,
+                np.pi/2)
+            * rho
+            * Phi
+        )
+
+        epsQ += (
+            phase
+            * T(1,2,Q,
+                theta_obs,
+                chi_obs,
+                np.pi/2)
+            * rho
+            * Phi
+        )
+
+        epsU += (
+            phase
+            * T(2,2,Q,
+                theta_obs,
+                chi_obs,
+                np.pi/2)
+            * rho
+            * Phi
+        )
+
+    return (
+        np.real(epsI),
+        np.real(epsQ),
+        np.real(epsU)
+    )
+xgrid = np.linspace(-5,5,401)
+
+Iprof = np.zeros_like(xgrid)
+Qprof = np.zeros_like(xgrid)
+Uprof = np.zeros_like(xgrid)
+
+rho20 = apply_hanle(
+    Jarr,
+    Hu,
+    theta_B,
+    chi_B
+)
+
+for i,x in enumerate(xgrid):
+
+    I,Q,U = emissivity_profile(
+        x,
+        rho20,
+        theta_obs,
+        chi_obs,
+        vH
+    )
+
+    Iprof[i] = I[0]
+    Qprof[i] = Q[0]
+    Uprof[i] = U[0]
+
+fig,ax = plt.subplots(2,2,figsize=(10,8))
+
+ax[0,0].plot(xgrid,Iprof)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Qprof)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,Uprof)
+ax[1,0].set_title("U")
+
+ax[1,1].axis("off")
+
+plt.tight_layout()
+plt.savefig("Stokes_try22.png", dpi = 300)
+
+def stokes_profiles_LL04(
+        xgrid,
+        Hu,
+        Jrad,
+        theta_B,
+        chi_B,
+        theta_obs,
+        chi_obs,
+        vH,
+        gamma_obs=np.pi/2):
+
+    # --------------------------------------
+    # Radiation tensors
+    # --------------------------------------
+
+    J00 = Jrad[(0,0)]
+
+    Jvert = Jrad_to_array(Jrad)
+
+    # full Hanle solution:
+    # rho_Q = [D H D† J]_Q
+    rho = apply_hanle(
+        Jvert,
+        Hu,
+        theta_B,
+        chi_B
+    )
+    print("rho components")
+    for Q in [-2,-1,0,1,2]:
+        print(Q, rho[idx(Q)])
+    # --------------------------------------
+    # output arrays
+    # --------------------------------------
+
+    Iprof = np.zeros_like(xgrid)
+    Qprof = np.zeros_like(xgrid)
+    Uprof = np.zeros_like(xgrid)
+
+    # --------------------------------------
+    # frequency loop
+    # --------------------------------------
+
+    for ix, x in enumerate(xgrid):
+
+        epsI = 0.0 + 0.0j
+        epsQ = 0.0 + 0.0j
+        epsU = 0.0 + 0.0j
+
+        # =====================================================
+        # (K,K') = (0,0)
+        # =====================================================
+
+        Phi00 = Phi_generalized(
+            np.array([x]),
+            K=0,
+            Kp=0,
+            Q=0,
+            vH=vH
+        )[0]
+
+        epsI += (
+            Phi00
+            * T(
+                0,      # Stokes I
+                0,
+                0,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * J00
+        )
+
+        # =====================================================
+        # (K,K') = (0,2)
+        # =====================================================
+
+        Phi02 = Phi_generalized(
+            np.array([x]),
+            K=0,
+            Kp=2,
+            Q=0,
+            vH=vH
+        )[0]
+
+        epsI += (
+            Phi02
+            * T(
+                0,
+                2,
+                0,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * J00
+        )
+
+        epsQ += (
+            Phi02
+            * T(
+                1,
+                2,
+                0,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * J00
+        )
+
+        epsU += (
+            Phi02
+            * T(
+                2,
+                2,
+                0,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * J00
+        )
+
+        # =====================================================
+        # K = 2 terms
+        # =====================================================
+        # =====================================================
+        # (2,0)
+        # =====================================================
+
+        Phi20 = Phi_generalized(
+            np.array([x]),
+            K=2,
+            Kp=0,
+            Q=0,
+            vH=vH
+        )[0]
+
+        rho20 = rho[idx(0)]
+
+        epsI += (
+            Phi20
+            * T(
+                0,
+                0,
+                0,
+                theta_obs,
+                chi_obs,
+                gamma_obs
+            )
+            * rho20
+        )
+
+        for Q in [-2,-1,0,1,2]:
+
+            phase = (-1)**Q
+
+            rhoQ = rho[idx(-Q)]
+
+            # -------------------------------
+            # (2,2)
+            # -------------------------------
+
+            Phi22 = Phi_generalized(
+                np.array([x]),
+                K=2,
+                Kp=2,
+                Q=Q,
+                vH=vH
+            )[0]
+
+            epsI += (
+                phase
+                * Phi22
+                * T(
+                    0,
+                    2,
+                    Q,
+                    theta_obs,
+                    chi_obs,
+                    gamma_obs
+                )
+                * rhoQ
+            )
+
+            epsQ += (
+                phase
+                * Phi22
+                * T(
+                    1,
+                    2,
+                    Q,
+                    theta_obs,
+                    chi_obs,
+                    gamma_obs
+                )
+                * rhoQ
+            )
+
+            epsU += (
+                phase
+                * Phi22
+                * T(
+                    2,
+                    2,
+                    Q,
+                    theta_obs,
+                    chi_obs,
+                    gamma_obs
+                )
+                * rhoQ
+            )
+
+        Iprof[ix] = np.real(epsI)
+        Qprof[ix] = np.real(epsQ)
+        Uprof[ix] = np.real(epsU)
+
+    return Iprof, Qprof, Uprof
+
+xgrid = np.linspace(-5,5,401)
+
+I,Q,U = stokes_profiles_LL04(
+    xgrid,
+    Hu=1.0,
+    Jrad=Jrad_0,
+    theta_B=np.pi/2,
+    chi_B=0.0,
+    theta_obs=np.pi/2,
+    chi_obs=0.0,
+    vH=1.0
+)
+
+fig,ax = plt.subplots(2,2,figsize=(10,8))
+
+ax[0,0].plot(xgrid,I)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Q)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,U)
+ax[1,0].set_title("U")
+
+ax[1,1].axis("off")
+
+plt.tight_layout()
+plt.savefig("Stokes_try_noV.png", dpi = 300)
