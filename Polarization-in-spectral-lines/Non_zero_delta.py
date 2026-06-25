@@ -3,9 +3,9 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -1986,28 +1986,28 @@ for ix, x in enumerate(xgrid):
                 epsI += (
                     phi22
                     * (-1.0)**Q
-                    * T(0,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * T(0,K,Q,theta_obs,chi_obs,np.pi/2)
                     * rho
                 )
 
                 epsQ += (
                     phi22
                     * (-1.0)**Q
-                    * T(1,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * T(1,K,Q,theta_obs,chi_obs,np.pi/2)
                     * rho
                 )
 
                 epsU += (
                     phi22
                     * (-1.0)**Q
-                    * T(2,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * T(2,K,Q,theta_obs,chi_obs,np.pi/2)
                     * rho
                 )
                 
                 epsV +=(
                     phi22
                     * (-1.0)**Q
-                    * T(3,2,Q,theta_obs,chi_obs,np.pi/2)
+                    * T(3,K,Q,theta_obs,chi_obs,np.pi/2)
                     * rho
                 )
             print("K = {}, Kp = {}, Q = {}".format(K, Kp, Q))
@@ -2016,7 +2016,7 @@ for ix, x in enumerate(xgrid):
             print("Eps U", np.real(epsU))
             print(np.shape(np.real(epsV)))
             print("Eps V", np.real(epsV))
-            '''
+            
             # all Ks
             if K == 2:
                 I_prof[ix] = (np.real(epsI[0]))
@@ -2034,7 +2034,7 @@ for ix, x in enumerate(xgrid):
             Q_prof[ix] = (np.real(epsQ[0]))
             U_prof[ix] = (np.real(epsU[0]))
             V_prof[ix] = np.real(epsV)
-
+            '''
 fig, ax = plt.subplots(2,2,figsize=(10,8))
 
 ax[0,0].plot(xgrid,I_prof)
@@ -2426,3 +2426,215 @@ print(T(2,2,0,np.pi/2,0,np.pi/2))
 
 for Q in [-2,-1,0,1,2]:
     print(Q, T(1,2,Q,np.pi/2,0,np.pi/2))
+
+P22 = Phi_generalized(
+    x,
+    K=2,
+    Kp=2,
+    Q=0,
+    vH=1.0
+)
+
+def emissivity_breakdown(
+        x,
+        Hu,
+        Jrad,
+        theta_B,
+        chi_B,
+        theta_obs,
+        chi_obs,
+        vH,
+        gamma_obs=np.pi/2):
+
+    J00 = Jrad[(0,0)]
+
+    Jvert = Jrad_to_array(Jrad)
+
+    rho = apply_hanle(
+        Jvert,
+        Hu,
+        theta_B,
+        chi_B
+    )
+
+    blocks = {
+        "00": {"I":0j, "Q":0j, "U":0j},
+        "02": {"I":0j, "Q":0j, "U":0j},
+        "20": {"I":0j, "Q":0j, "U":0j},
+        "22": {"I":0j, "Q":0j, "U":0j},
+    }
+
+    # =====================================================
+    # (0,0)
+    # =====================================================
+
+    Phi00 = Phi_generalized(
+        np.array([x]),
+        K=0,
+        Kp=0,
+        Q=0,
+        vH=vH
+    )[0]
+
+    blocks["00"]["I"] += (
+        Phi00
+        * T(0,0,0,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * J00
+    )
+
+    # =====================================================
+    # (0,2)
+    # =====================================================
+
+    Phi02 = Phi_generalized(
+        np.array([x]),
+        K=0,
+        Kp=2,
+        Q=0,
+        vH=vH
+    )[0]
+
+    blocks["02"]["I"] += (
+        Phi02
+        * T(0,2,0,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * J00
+    )
+
+    blocks["02"]["Q"] += (
+        Phi02
+        * T(1,2,0,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * J00
+    )
+
+    blocks["02"]["U"] += (
+        Phi02
+        * T(2,2,0,
+            theta_obs,
+            chi_obs,
+            gamma_obs)
+        * J00
+    )
+
+    # =====================================================
+    # K=2 terms
+    # =====================================================
+
+    for Q in [-2,-1,0,1,2]:
+
+        phase = (-1)**Q
+
+        rhoQ = rho[idx(Q)]
+
+        # -----------------------------
+        # (2,0)
+        # -----------------------------
+
+        Phi20 = Phi_generalized(
+            np.array([x]),
+            K=2,
+            Kp=0,
+            Q=Q,
+            vH=vH
+        )[0]
+
+        blocks["20"]["I"] += (
+            phase
+            * Phi20
+            * T(0,0,0,
+                theta_obs,
+                chi_obs,
+                gamma_obs)
+            * rhoQ
+        )
+
+        # -----------------------------
+        # (2,2)
+        # -----------------------------
+
+        Phi22 = Phi_generalized(
+            np.array([x]),
+            K=2,
+            Kp=2,
+            Q=Q,
+            vH=vH
+        )[0]
+
+        blocks["22"]["I"] += (
+            phase
+            * Phi22
+            * T(0,2,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs)
+            * rhoQ
+        )
+
+        blocks["22"]["Q"] += (
+            phase
+            * Phi22
+            * T(1,2,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs)
+            * rhoQ
+        )
+
+        blocks["22"]["U"] += (
+            phase
+            * Phi22
+            * T(2,2,Q,
+                theta_obs,
+                chi_obs,
+                gamma_obs)
+            * rhoQ
+        )
+
+    print("\n===================================")
+    print("EMISSIVITY BREAKDOWN")
+    print("x =", x)
+    print("===================================")
+
+    Itot = Qtot = Utot = 0j
+
+    for name in ["00","02","20","22"]:
+
+        I = blocks[name]["I"]
+        Q = blocks[name]["Q"]
+        U = blocks[name]["U"]
+
+        Itot += I
+        Qtot += Q
+        Utot += U
+
+        print(f"\nBlock ({name[0]},{name[1]})")
+        print("I =", np.real(I))
+        print("Q =", np.real(Q))
+        print("U =", np.real(U))
+
+    print("\nTOTAL")
+    print("I =", np.real(Itot))
+    print("Q =", np.real(Qtot))
+    print("U =", np.real(Utot))
+
+    print("Q/I =", np.real(Qtot)/np.real(Itot))
+    print("U/I =", np.real(Utot)/np.real(Itot))
+
+emissivity_breakdown(
+    x=0.0,
+    Hu=1.0,
+    Jrad=Jrad_0,
+    theta_B=np.pi/2,
+    chi_B=0.0,
+    theta_obs=np.pi/2,
+    chi_obs=0.0,
+    vH=0.002
+)
