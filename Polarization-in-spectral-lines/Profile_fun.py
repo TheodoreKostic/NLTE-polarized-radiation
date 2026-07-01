@@ -1,6 +1,7 @@
 import numpy as np
 import sys
 import os
+from scipy.special import wofz
 
 script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
@@ -36,7 +37,20 @@ def phi_doppler(x):
 def phi_transition(x, Mu, Ml, vH):
     shift = (Mu - Ml)*vH
     
-    return phi_doppler(x - shift)
+    return phi_doppler(shift - x)
+
+# Complex
+# That complex structure is what generates the antisymmetric 
+# dispersion-like behavior needed for V. 
+# With only a real Gaussian, V stays Gaussian and very small.
+
+def phi_complex(x):
+    return wofz(x) / np.sqrt(np.pi)
+
+def phi_transition_complex(x, Mu, Ml, vH):
+    shift = (Mu - Ml) * vH
+    return phi_complex(shift - x)
+
 
 
 def Phi_generalized(x, K, Kp, Q, vH):
@@ -57,7 +71,7 @@ def Phi_generalized(x, K, Kp, Q, vH):
         3*(2*Ju+1)*(2*K+1)*(2*Kp+1)
     )
 
-    Phi = 0.0*np.asarray(x, dtype=float)
+    Phi = np.zeros_like(np.asarray(x), dtype=np.complex128)
     # Loop through q and qp
     for Mu in (-1,0,1):
         for Mup in (-1,0,1):
@@ -118,10 +132,9 @@ def Phi_generalized(x, K, Kp, Q, vH):
                     "vH = ", vH
                 )
                 
-            profile = 0.5*(
-                phi_transition(x, Mu, Ml, vH)
-                +
-                phi_transition(x, Mup, Ml, vH)
+            profile = 0.5 * (
+                phi_transition_complex(x, Mu, Ml, vH)
+                + np.conj(phi_transition_complex(x, Mup, Ml, vH))
             )
 
             Phi += term*profile
