@@ -209,3 +209,19 @@ def radiation_tensor_delta(hp, delta):
         J[(2,Q)] = Jrot[idx(Q)]
 
     return J
+
+# Normalization factor
+# CGS constants
+e = 4.80320427e-10   # statcoulomb (esu)
+me = 9.10938356e-28  # g
+c = 2.99792458e10    # cm/s
+
+# atomic/atmospheric inputs
+f = ...           # oscillator strength
+N_l = ...         # column density (cm^-2)
+Delta_nu_D = ...  # Doppler width in Hz
+I0 = ...          # I_nu0(0) in same intensity units
+
+# N = (e**2/(me*c)) * f * N_l * I0 / (Delta_nu_D**2)
+# or, if you already computed tau_L:
+# N_alt = tau_L * I0 / (np.sqrt(np.pi) * Delta_nu_D)
