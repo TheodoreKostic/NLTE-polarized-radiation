@@ -49,7 +49,7 @@ def phi_complex(x):
 
 def phi_transition_complex(x, Mu, Ml, vH):
     shift = (Mu - Ml) * vH
-    return phi_complex(shift - x)
+    return phi_complex(x - shift)
 
 
 
@@ -111,7 +111,7 @@ def Phi_generalized(x, K, Kp, Q, vH):
                         f"coeff={term:+.8f}"
                     )
             '''
-            
+            '''
             if K == 2 and Kp == 2 and Q == 0:
                 coeff = (
             (-1)**(1 + Ju - Mu + qp)
@@ -131,7 +131,7 @@ def Phi_generalized(x, K, Kp, Q, vH):
                     "coeff =", coeff,
                     "vH = ", vH
                 )
-                
+              '''  
             profile = 0.5 * (
                 phi_transition_complex(x, Mu, Ml, vH)
                 + np.conj(phi_transition_complex(x, Mup, Ml, vH))
