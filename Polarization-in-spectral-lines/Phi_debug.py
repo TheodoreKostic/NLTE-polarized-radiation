@@ -13,6 +13,22 @@ from Radiation_fun import *
 from Hanle_fun import *
 from Profile_fun import *
 
+a = damping_parameter()
+
+print(phi_complex(0.0, a=0.0))
+print(phi_complex(0.0, a=1.0))
+
+x = np.linspace(-5, 5, 101)
+vH = 0.002
+
+P0 = Phi_generalized(x, K=2, Kp=1, Q=0, vH=vH, a=0.0)[0]
+P1 = Phi_generalized(x, K=2, Kp=1, Q=0, vH=vH, a=1.0)[0]
+
+print("a=0:", P0)
+print("a=1:", P1)
+print("diff:", P1 - P0)
+
+
 def emissivity_breakdown(
         x,
         Hu,
@@ -51,7 +67,8 @@ def emissivity_breakdown(
         K=0,
         Kp=0,
         Q=0,
-        vH=vH
+        vH=vH,
+        a=a
     )[0]
 
     blocks["00"]["I"] += (
@@ -72,7 +89,8 @@ def emissivity_breakdown(
         K=0,
         Kp=2,
         Q=0,
-        vH=vH
+        vH=vH,
+        a=a
     )[0]
 
     blocks["02"]["I"] += (
@@ -121,7 +139,8 @@ def emissivity_breakdown(
             K=2,
             Kp=0,
             Q=Q,
-            vH=vH
+            vH=vH,
+            a=a
         )[0]
 
         blocks["20"]["I"] += (
@@ -143,7 +162,8 @@ def emissivity_breakdown(
             K=2,
             Kp=2,
             Q=Q,
-            vH=vH
+            vH=vH,
+            a=a
         )[0]
 
         blocks["22"]["I"] += (
@@ -207,7 +227,7 @@ def emissivity_breakdown(
     print("U/I =", np.real(Utot)/np.real(Itot))
 
 Jrad_0 = radiation_tensor(hR=0.073)
-Hu = 1.0
+Hu = 1.0 # depends on B
 vH = 0.002
 
 xgrid = np.linspace(-5,5,401)
@@ -312,10 +332,10 @@ for ix, x in enumerate(xgrid):
     epsU = 0.0+0j
     epsV = 0.0+0j
     # K=0 blocks
-    Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH)[0]
+    Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH, a=a)[0]
     epsI += Phi00 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * J00
 
-    Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH)[0]
+    Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a)[0]
     epsI += Phi02 * T(0,2,0,theta_obs,chi_obs,gamma_obs) * J00
     epsQ += Phi02 * T(1,2,0,theta_obs,chi_obs,gamma_obs) * J00
     epsU += Phi02 * T(2,2,0,theta_obs,chi_obs,gamma_obs) * J00
@@ -325,27 +345,27 @@ for ix, x in enumerate(xgrid):
         phase = (-1)**Q
         rhoQ = rho2[idx(-Q)]
 
-        Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH)[0]
+        Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a)[0]
         epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * rhoQ
 
-        Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH)[0]
+        Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a)[0]
         epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsV += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
 
-        Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH)[0]
+        Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a)[0]
         epsI += phase * Phi22 * T(0,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsQ += phase * Phi22 * T(1,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi22 * T(2,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
             
-        I_prof[ix] = (np.real(epsI))
-        Q_prof[ix] = (np.real(epsQ))
-        U_prof[ix] = (np.real(epsU))
-        V_prof[ix] = np.real(epsV)
+        I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
+        Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
+        U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
+        V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
 
-fig, ax = plt.subplots(2,2,figsize=(10,8))
-
+fig, ax = plt.subplots(2,2,figsize=(12,10))
+fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
 ax[0,0].plot(xgrid,I_prof)
 ax[0,0].set_title("I")
 
@@ -359,7 +379,7 @@ ax[1,1].plot(xgrid,V_prof)
 ax[1,1].set_title("V")
 
 plt.tight_layout()
-plt.savefig("Stokes_try_gamma_90_theta_90.png", dpi = 300)
+plt.savefig("Stokes_try_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
 
 emissivity_breakdown(
     x=0.0,
@@ -377,21 +397,24 @@ Phi_Q0 = Phi_generalized(
     K=2,
     Kp=1,
     Q=0,
-    vH=1.0
+    vH=1.0,
+    a=a
 )
 Phi_Q1 = Phi_generalized(
     xgrid,
     K=2,
     Kp=1,
     Q=1,
-    vH=1.0
+    vH=1.0,
+    a=a
 )
 Phi_Q2 = Phi_generalized(
     xgrid,
     K=2,
     Kp=1,
     Q=2,
-    vH=1.0
+    vH=1.0,
+    a=a
 )
 plt.figure()
 plt.plot(xgrid, Phi_Q0, label="Q=0")
@@ -410,7 +433,8 @@ for K in [0,1,2]:
             K,
             Kp,
             0,
-            vH
+            vH,
+            a=a
         )[0]
 
         print(K,Kp,val)
@@ -422,7 +446,8 @@ for Q in [-2,-1,0,1,2]:
              2,
              1,
              Q,
-             vH
+             vH,
+             a=a
           )[0])
     
 print("Last suspicious check:")
@@ -435,7 +460,8 @@ for K in [0,1,2]:
                 K,
                 Kp,
                 Q,
-                vH=1.0
+                vH=1.0,
+                a=a
             )[0]
 
             if abs(val) > 1e-10:
@@ -503,7 +529,7 @@ for gamma in [0.0, np.pi/2]:
 x = np.array([0.0])
 for sign in [1,-1]:
     # temporarily edit phi_transition_complex to use (sign*shift - x) or run an alternative function that flips arg
-    P = Phi_generalized(x, K=2, Kp=1, Q=0, vH=1.0)  # run before/after edit
+    P = Phi_generalized(x, K=2, Kp=1, Q=0, vH=1.0, a=a)  # run before/after edit
     print("sign", sign, "Phi(K=2,K'=1,Q=0) =", P[0])
 
 rho = apply_hanle(Jarr, Hu=1.0, theta_B=np.pi/2, chi_B=0.0)
@@ -597,10 +623,10 @@ def compute_stokes_profiles(
         epsU = 0.0 + 0j
         epsV = 0.0 + 0j
 
-        Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH)[0]
+        Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH, a=a)[0]
         epsI += Phi00 * T_choice(0, 0, 0) * J00
 
-        Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH)[0]
+        Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a)[0]
         epsI += Phi02 * T_choice(0, 2, 0) * J00
         epsQ += Phi02 * T_choice(1, 2, 0) * J00
         epsU += Phi02 * T_choice(2, 2, 0) * J00
@@ -609,24 +635,24 @@ def compute_stokes_profiles(
             phase = (-1) ** Q
             rhoQ = rho2[idx(-Q)]
 
-            Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH)[0]
+            Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a)[0]
             epsI += phase * Phi20 * T_choice(0, 0, Q) * rhoQ
 
-            Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH)[0]
+            Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a)[0]
             epsI += phase * Phi21 * T_choice(0, 1, Q) * rhoQ
             epsQ += phase * Phi21 * T_choice(1, 1, Q) * rhoQ
             epsU += phase * Phi21 * T_choice(2, 1, Q) * rhoQ
             epsV += phase * Phi21 * T(3, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
 
-            Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH)[0]
+            Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a)[0]
             epsI += phase * Phi22 * T_choice(0, 2, Q) * rhoQ
             epsQ += phase * Phi22 * T_choice(1, 2, Q) * rhoQ
             epsU += phase * Phi22 * T_choice(2, 2, Q) * rhoQ
 
-        I_prof[ix] = np.real(epsI)
-        Q_prof[ix] = np.real(epsQ)
-        U_prof[ix] = np.real(epsU)
-        V_prof[ix] = np.real(epsV)
+        I_prof[ix] = np.real(epsI)*np.sqrt(np.pi)
+        Q_prof[ix] = np.real(epsQ)*np.sqrt(np.pi)
+        U_prof[ix] = np.real(epsU)*np.sqrt(np.pi)
+        V_prof[ix] = np.real(epsV)*np.sqrt(np.pi)
 
     return I_prof, Q_prof, U_prof, V_prof
 
@@ -640,8 +666,8 @@ I_B, Q_B, U_B, V_B = compute_stokes_profiles(
     theta_obs, chi_obs, gamma_obs, use_T_book=True
 )
 
-fig, ax = plt.subplots(2, 2, figsize=(10, 8))
-
+fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle("Stokes profiles comparison: T vs T_book for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
 for row, label, data_T, data_B in [
         (0, "I", I_T, I_B),
         (1, "Q", Q_T, Q_B),
@@ -656,5 +682,224 @@ for row, label, data_T, data_B in [
     ax[r, c].legend()
 
 plt.tight_layout()
-plt.savefig("Stokes_compare_T_Tbook.png", dpi=300)
-print("Saved: Stokes_compare_T_Tbook.png")
+plt.savefig("Stokes_compare_T_Tbook_Hu{}.png".format(Hu), dpi=300)
+print("Saved: Stokes_compare_T_Tbook_Hu{}.png".format(Hu))
+
+# Comparison
+def compare_appendix_phi():
+    print("\n=== Appendix vs Phi_generalized comparison ===")
+    for K in [0, 1, 2]:
+        for Kp in [0, 1, 2]:
+            for Q in [-2, -1, 0, 1, 2]:
+                if abs(Q) > min(K, Kp):
+                    continue
+                P_gen = Phi_generalized(xgrid, K, Kp, Q, vH, a=a)
+                P_app = Phi_appendix(xgrid, K, Kp, Q, vH)
+                diff = np.max(np.abs(P_gen - P_app))
+                print(f"K={K} K'={Kp} Q={Q} max|gen-app| = {diff:.3e}")
+
+    # plot one representative case
+    K, Kp, Q = 2, 2, 0
+    P_gen = Phi_generalized(xgrid, K, Kp, Q, vH)
+    P_app = Phi_appendix(xgrid, K, Kp, Q, vH)
+
+    plt.figure(figsize=(8, 5))
+    plt.plot(xgrid, np.real(P_gen), 'r-', label='Phi_generalized Re')
+    plt.plot(xgrid, np.real(P_app), 'b--', label='Phi_appendix Re')
+    plt.plot(xgrid, np.imag(P_gen), 'g-', label='Phi_generalized Im')
+    plt.plot(xgrid, np.imag(P_app), 'k--', label='Phi_appendix Im')
+    plt.title(f"Appendix check: K={K}, K'={Kp}, Q={Q}")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("Phi_appendix_vs_generalized.png", dpi=300)
+
+#compare_appendix_phi()
+
+def compute_stokes_profiles_appendix(
+        theta_obs,
+        chi_obs,
+        gamma_obs,
+        use_T_book=False):
+
+    Jarr = Jrad_to_array(Jrad_0)
+    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+
+    I_prof = np.zeros_like(xgrid)
+    Q_prof = np.zeros_like(xgrid)
+    U_prof = np.zeros_like(xgrid)
+    V_prof = np.zeros_like(xgrid)
+
+    def T_choice(i, Kp, Q):
+        if use_T_book and Kp == 2 and i in (0, 1, 2):
+            return T_book(i, Q, theta_obs, chi_obs, gamma_obs)
+        return T(i, Kp, Q, theta_obs, chi_obs, gamma_obs)
+
+    for ix, x in enumerate(xgrid):
+        J00 = Jrad_0[(0, 0)]
+        epsI = 0.0 + 0j
+        epsQ = 0.0 + 0j
+        epsU = 0.0 + 0j
+        epsV = 0.0 + 0j
+
+        Phi00 = Phi_appendix(np.array([x]), K=0, Kp=0, Q=0, vH=vH)[0]
+        epsI += Phi00 * T_choice(0, 0, 0) * J00
+
+        Phi02 = Phi_appendix(np.array([x]), K=0, Kp=2, Q=0, vH=vH)[0]
+        epsI += Phi02 * T_choice(0, 2, 0) * J00
+        epsQ += Phi02 * T_choice(1, 2, 0) * J00
+        epsU += Phi02 * T_choice(2, 2, 0) * J00
+
+        for Q in [-2, -1, 0, 1, 2]:
+            phase = (-1) ** Q
+            rhoQ = rho2[idx(-Q)]
+
+            Phi20 = Phi_appendix(np.array([x]), K=2, Kp=0, Q=Q, vH=vH)[0]
+            epsI += phase * Phi20 * T_choice(0, 0, Q) * rhoQ
+
+            Phi21 = Phi_appendix(np.array([x]), K=2, Kp=1, Q=Q, vH=vH)[0]
+            epsI += phase * Phi21 * T_choice(0, 1, Q) * rhoQ
+            epsQ += phase * Phi21 * T_choice(1, 1, Q) * rhoQ
+            epsU += phase * Phi21 * T_choice(2, 1, Q) * rhoQ
+            epsV += phase * Phi21 * T(3, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+
+            Phi22 = Phi_appendix(np.array([x]), K=2, Kp=2, Q=Q, vH=vH)[0]
+            epsI += phase * Phi22 * T_choice(0, 2, Q) * rhoQ
+            epsQ += phase * Phi22 * T_choice(1, 2, Q) * rhoQ
+            epsU += phase * Phi22 * T_choice(2, 2, Q) * rhoQ
+
+        I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
+        Q_prof[ix] = np.real(epsQ) * np.sqrt(np.pi)
+        U_prof[ix] = np.real(epsU) * np.sqrt(np.pi)
+        V_prof[ix] = np.real(epsV) * np.sqrt(np.pi)
+
+    return I_prof, Q_prof, U_prof, V_prof
+
+
+compare_T_vs_T_book(theta_obs, chi_obs)
+
+I_T, Q_T, U_T, V_T = compute_stokes_profiles_appendix(
+    theta_obs, chi_obs, gamma_obs, use_T_book=False
+)
+I_B, Q_B, U_B, V_B = compute_stokes_profiles_appendix(
+    theta_obs, chi_obs, gamma_obs, use_T_book=True
+)
+
+fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle("Stokes profiles comparison: T vs T_book (Appendix) for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+for row, label, data_T, data_B in [
+        (0, "I", I_T, I_B),
+        (1, "Q", Q_T, Q_B),
+        (2, "U", U_T, U_B),
+        (3, "V", V_T, V_B),
+]:
+    r = row // 2
+    c = row % 2
+    ax[r, c].plot(xgrid, data_T, "r-", label="T")
+    ax[r, c].plot(xgrid, data_B, "b--", label="T_book")
+    ax[r, c].set_title(label)
+    ax[r, c].legend()
+
+plt.tight_layout()
+plt.savefig("Stokes_compare_T_Tbook_Hu{}_phi_appendix.png".format(Hu), dpi=300)
+print("Saved: Stokes_compare_T_Tbook_Hu{}_phi_appendix.png".format(Hu))
+
+# Hu = 0.0 for testing
+def compute_stokes_profiles_phi(
+        theta_obs,
+        chi_obs,
+        gamma_obs,
+        use_appendix=False):
+
+    Jarr = Jrad_to_array(Jrad_0)
+    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+
+    I_prof = np.zeros_like(xgrid)
+    Q_prof = np.zeros_like(xgrid)
+    U_prof = np.zeros_like(xgrid)
+    V_prof = np.zeros_like(xgrid)
+
+    def Phi_choice(K, Kp, Q, x):
+        if use_appendix:
+            return Phi_appendix(np.array([x]), K=K, Kp=Kp, Q=Q, vH=vH)[0]
+        return Phi_generalized(np.array([x]), K=K, Kp=Kp, Q=Q, vH=vH, a=a)[0]
+
+    for ix, x in enumerate(xgrid):
+        J00 = Jrad_0[(0, 0)]
+        epsI = 0.0 + 0j
+        epsQ = 0.0 + 0j
+        epsU = 0.0 + 0j
+        epsV = 0.0 + 0j
+
+        Phi00 = Phi_choice(0, 0, 0, x)
+        epsI += Phi00 * T(0, 0, 0, theta_obs, chi_obs, gamma_obs) * J00
+
+        Phi02 = Phi_choice(0, 2, 0, x)
+        epsI += Phi02 * T(0, 2, 0, theta_obs, chi_obs, gamma_obs) * J00
+        epsQ += Phi02 * T(1, 2, 0, theta_obs, chi_obs, gamma_obs) * J00
+        epsU += Phi02 * T(2, 2, 0, theta_obs, chi_obs, gamma_obs) * J00
+
+        for Q in [-2, -1, 0, 1, 2]:
+            phase = (-1) ** Q
+            rhoQ = rho2[idx(-Q)]
+
+            Phi20 = Phi_choice(2, 0, Q, x)
+            epsI += phase * Phi20 * T(0, 0, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+
+            Phi21 = Phi_choice(2, 1, Q, x)
+            epsI += phase * Phi21 * T(0, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+            epsQ += phase * Phi21 * T(1, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+            epsU += phase * Phi21 * T(2, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+            epsV += phase * Phi21 * T(3, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+
+            Phi22 = Phi_choice(2, 2, Q, x)
+            epsI += phase * Phi22 * T(0, 2, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+            epsQ += phase * Phi22 * T(1, 2, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+            epsU += phase * Phi22 * T(2, 2, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
+
+        I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
+        Q_prof[ix] = np.real(epsQ) * np.sqrt(np.pi)
+        U_prof[ix] = np.real(epsU) * np.sqrt(np.pi)
+        V_prof[ix] = np.real(epsV) * np.sqrt(np.pi)
+
+    return I_prof, Q_prof, U_prof, V_prof
+
+
+I_gen, Q_gen, U_gen, V_gen = compute_stokes_profiles_phi(
+    theta_obs, chi_obs, gamma_obs, use_appendix=False
+)
+I_app, Q_app, U_app, V_app = compute_stokes_profiles_phi(
+    theta_obs, chi_obs, gamma_obs, use_appendix=True
+)
+
+fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle("Stokes profiles comparison: Phi_generalized vs Phi_appendix for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+for row, label, data_gen, data_app in [
+        (0, "I", I_gen, I_app),
+        (1, "Q", Q_gen, Q_app),
+        (2, "U", U_gen, U_app),
+        (3, "V", V_gen, V_app),
+]:
+    r = row // 2
+    c = row % 2
+    ax[r, c].plot(xgrid, data_gen, "r-", label="Phi_generalized")
+    ax[r, c].plot(xgrid, data_app, "b--", label="Phi_appendix")
+    ax[r, c].set_title(label)
+    ax[r, c].legend()
+
+plt.tight_layout()
+plt.savefig("Stokes_compare_Phi_generalized_vs_appendix_Hu{}.png".format(Hu), dpi=300)
+print("Saved: Stokes_compare_Phi_generalized_vs_appendix_Hu{}.png".format(Hu))
+
+x = np.linspace(-5, 5, 501)
+a = 1.0
+print(f"Damping parameter a = {a:.3e}")
+phi_no_damp = phi_complex(x, a=0.0)
+phi_damp = phi_complex(x, a=a)
+plt.figure(figsize=(8, 5))
+plt.plot(x, np.real(phi_no_damp), 'r-', label='Re, a=0')
+plt.plot(x, np.real(phi_damp), 'r--', label=f'Re, a={a:.1e}')
+plt.plot(x, np.imag(phi_no_damp), 'b-', label='Im, a=0')
+plt.plot(x, np.imag(phi_damp), 'b--', label=f'Im, a={a:.1e}')
+plt.legend()
+plt.savefig("phi_complex_damping_comparison.png", dpi=300)
+print("Saved: phi_complex_damping_comparison.png")

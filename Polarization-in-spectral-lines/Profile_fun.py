@@ -2,6 +2,7 @@ import numpy as np
 import sys
 import os
 from scipy.special import wofz
+import matplotlib.pyplot as plt
 
 script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
@@ -22,10 +23,21 @@ def W3(j1,j2,j3,m1,m2,m3):
         ).evalf()
     )
 
+# Transition parameters
+A_ul = 5 * 10**7 # s^-1
+default_Delta_nu_D = 4 * 10**9 # s^-1
+def damping_parameter(A_ul=A_ul, Delta_nu_D=default_Delta_nu_D):
+    """
+    Damping parameter a = Gamma / (4 pi Delta_nu_D)
+    Gamma = A_ul for radiative damping
+    """
+    return A_ul / (4 * np.pi * Delta_nu_D)
+
 
 # Define Φ^QKK′​ as per Eq. (10.40) from LL04
 
 # Doppler profile
+# Use Doppler profile, but complex, so that we can get the antisymmetric part needed for V.
 def phi_doppler(x):
     """
     Normalized Doppler profile.
@@ -44,16 +56,15 @@ def phi_transition(x, Mu, Ml, vH):
 # dispersion-like behavior needed for V. 
 # With only a real Gaussian, V stays Gaussian and very small.
 
-def phi_complex(x):
-    return wofz(x) / np.sqrt(np.pi)
+def phi_complex(x, a):
+    return wofz(x + 1j*a) / np.sqrt(np.pi)
 
-def phi_transition_complex(x, Mu, Ml, vH):
+def phi_transition_complex(x, Mu, Ml, vH, a):
     shift = (Mu - Ml) * vH
-    return phi_complex(x - shift)
+    return phi_complex(x - shift, a)
 
 
-
-def Phi_generalized(x, K, Kp, Q, vH):
+def Phi_generalized(x, K, Kp, Q, vH, a):
     """
     Eq. (10.40)
 
@@ -133,10 +144,84 @@ def Phi_generalized(x, K, Kp, Q, vH):
                 )
               '''  
             profile = 0.5 * (
-                phi_transition_complex(x, Mu, Ml, vH)
-                + np.conj(phi_transition_complex(x, Mup, Ml, vH))
+                phi_transition_complex(x, Mu, Ml, vH, a)
+                + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
             )
 
             Phi += term*profile
 
     return pref*Phi
+
+# Profile function based on Appendix A13 form LL04
+# Properties of Generalized Profiles
+
+def phi_q(x, q, vH):
+    """
+    Appendix definition for q = -1,0,+1.
+    We use q -> shift = -q * vH, because q is the Zeeman component label.
+    """
+    return np.real(phi_complex(x + q * vH))
+
+
+def psi_q(x, q, vH):
+    return np.imag(phi_complex(x + q * vH))
+
+
+def Phi_appendix(x, K, Kp, Q, vH):
+    x = np.asarray(x, dtype=np.complex128)
+
+    phi_p1 = phi_q(x, +1, vH)
+    phi_0 = phi_q(x, 0, vH)
+    phi_m1 = phi_q(x, -1, vH)
+
+    psi_p1 = psi_q(x, +1, vH)
+    psi_0 = psi_q(x, 0, vH)
+    psi_m1 = psi_q(x, -1, vH)
+
+    if Q < 0:
+        return np.conj(Phi_appendix(x, K, Kp, -Q, vH))
+
+    if K == 0 and Kp == 0 and Q == 0:
+        return (phi_p1 + phi_0 + phi_m1) / 3.0
+
+    if K == 0 and Kp == 1 and Q == 0:
+        return (phi_p1 - phi_m1) / np.sqrt(6.0)
+
+    if K == 0 and Kp == 2 and Q == 0:
+        return (phi_p1 - 2.0 * phi_0 + phi_m1) / np.sqrt(3.0)
+
+    if K == 1 and Kp == 0 and Q == 0:
+        return -(phi_p1 + phi_m1) / 2.0
+
+    if K == 1 and Kp == 1 and Q == 0:
+        return -0.25 * (phi_p1 + 1j * psi_p1 + 2.0 * phi_0 + phi_m1 - 1j * psi_m1)
+
+    if K == 1 and Kp == 2 and Q == 0:
+        return -(phi_p1 - phi_m1) / (2.0 * np.sqrt(3.0))
+
+    if K == 2 and Kp == 0 and Q == 0:
+        return (phi_p1 - 2.0 * phi_0 + phi_m1) / np.sqrt(3.0)
+
+    if K == 2 and Kp == 1 and Q == 0:
+        return -(phi_p1 - phi_m1) / (2.0 * np.sqrt(3.0))
+
+    if K == 2 and Kp == 2 and Q == 0:
+        return (phi_p1 + 4.0 * phi_0 + phi_m1) / 6.0
+
+    if K == 1 and Kp == 1 and Q == 1:
+        return -0.25 * (phi_p1 + 1j * psi_p1 + 2.0 * phi_0 + phi_m1 - 1j * psi_m1)
+
+    if K == 1 and Kp == 2 and Q == 1:
+        return -0.25 * (phi_p1 + 1j * psi_p1 - 2.0j * psi_0 - phi_m1 + 1j * psi_m1)
+
+    if K == 2 and Kp == 2 and Q == 1:
+        return 0.25 * (phi_p1 + 1j * psi_p1 + 2.0 * phi_0 + phi_m1 - 1j * psi_m1)
+
+    if K == 2 and Kp == 2 and Q == 2:
+        return 0.5 * (phi_p1 + 1j * psi_p1 + phi_m1 - 1j * psi_m1)
+
+    return np.zeros_like(x, dtype=np.complex128)
+
+
+
+# After this we can go to response functions!
