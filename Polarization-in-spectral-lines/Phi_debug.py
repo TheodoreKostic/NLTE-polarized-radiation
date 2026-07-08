@@ -363,10 +363,10 @@ for ix, x in enumerate(xgrid):
         epsQ += phase * Phi22 * T(1,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi22 * T(2,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
             
-        I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
-        Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
-        U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
-        V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
+    I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
+    Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
+    U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
+    V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
 
 fig, ax = plt.subplots(2,2,figsize=(12,10))
 fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
@@ -649,17 +649,17 @@ def compute_stokes_profiles(
             epsI += phase * Phi21 * T_choice(0, 1, Q) * rhoQ
             epsQ += phase * Phi21 * T_choice(1, 1, Q) * rhoQ
             epsU += phase * Phi21 * T_choice(2, 1, Q) * rhoQ
-           
+            epsV += phase * Phi21 * T(3, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
 
             Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
             epsI += phase * Phi22 * T_choice(0, 2, Q) * rhoQ
             epsQ += phase * Phi22 * T_choice(1, 2, Q) * rhoQ
             epsU += phase * Phi22 * T_choice(2, 2, Q) * rhoQ
 
-        I_prof[ix] = np.real(epsI)*np.sqrt(np.pi)
-        Q_prof[ix] = np.real(epsQ)*np.sqrt(np.pi)
-        U_prof[ix] = np.real(epsU)*np.sqrt(np.pi)
-        V_prof[ix] = np.real(epsV)*np.sqrt(np.pi)
+        I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
+        Q_prof[ix] = np.real(epsQ) * np.sqrt(np.pi)
+        U_prof[ix] = np.real(epsU) * np.sqrt(np.pi)
+        V_prof[ix] = np.real(epsV) * np.sqrt(np.pi)
 
     return I_prof, Q_prof, U_prof, V_prof
 
@@ -770,7 +770,7 @@ def compute_stokes_profiles_appendix(
             epsI += phase * Phi21 * T_choice(0, 1, Q) * rhoQ
             epsQ += phase * Phi21 * T_choice(1, 1, Q) * rhoQ
             epsU += phase * Phi21 * T_choice(2, 1, Q) * rhoQ
-            
+            epsV += phase * Phi21 * T(3, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
 
             Phi22 = Phi_appendix(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
             epsI += phase * Phi22 * T_choice(0, 2, Q) * rhoQ
