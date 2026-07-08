@@ -26,12 +26,24 @@ def W3(j1,j2,j3,m1,m2,m3):
 # Transition parameters
 A_ul = 5 * 10**7 # s^-1
 default_Delta_nu_D = 4 * 10**9 # s^-1
+
 def damping_parameter(A_ul=A_ul, Delta_nu_D=default_Delta_nu_D):
     """
     Damping parameter a = Gamma / (4 pi Delta_nu_D)
     Gamma = A_ul for radiative damping
     """
     return A_ul / (4 * np.pi * Delta_nu_D)
+
+
+def zeeman_shift_parameter(B, gJ=1.0, Delta_nu_D=default_Delta_nu_D):
+    """
+    Dimensionless Zeeman splitting in Doppler units.
+
+    v_H = Delta_nu_Z / Delta_nu_D,
+    with Delta_nu_Z = gJ * nu_L and nu_L = 1.3996e6 * B [Hz/G].
+    """
+    nu_L = 1.3996e6 * B
+    return gJ * nu_L / Delta_nu_D
 
 
 # Define Φ^QKK′​ as per Eq. (10.40) from LL04
@@ -58,6 +70,7 @@ def phi_transition(x, Mu, Ml, vH):
 
 def phi_complex(x, a):
     return wofz(x + 1j*a) / np.sqrt(np.pi)
+
 
 def phi_transition_complex(x, Mu, Ml, vH, a):
     shift = (Mu - Ml) * vH
@@ -155,31 +168,31 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
 # Profile function based on Appendix A13 form LL04
 # Properties of Generalized Profiles
 
-def phi_q(x, q, vH):
+def phi_q(x, q, vH, a):
     """
     Appendix definition for q = -1,0,+1.
     We use q -> shift = -q * vH, because q is the Zeeman component label.
     """
-    return np.real(phi_complex(x + q * vH))
+    return np.real(phi_complex(x + q * vH, a))
 
 
-def psi_q(x, q, vH):
-    return np.imag(phi_complex(x + q * vH))
+def psi_q(x, q, vH, a):
+    return np.imag(phi_complex(x + q * vH, a))
 
 
-def Phi_appendix(x, K, Kp, Q, vH):
+def Phi_appendix(x, K, Kp, Q, vH, a):
     x = np.asarray(x, dtype=np.complex128)
 
-    phi_p1 = phi_q(x, +1, vH)
-    phi_0 = phi_q(x, 0, vH)
-    phi_m1 = phi_q(x, -1, vH)
+    phi_p1 = phi_q(x, +1, vH, a)
+    phi_0 = phi_q(x, 0, vH, a)
+    phi_m1 = phi_q(x, -1, vH, a)
 
-    psi_p1 = psi_q(x, +1, vH)
-    psi_0 = psi_q(x, 0, vH)
-    psi_m1 = psi_q(x, -1, vH)
+    psi_p1 = psi_q(x, +1, vH, a)
+    psi_0 = psi_q(x, 0, vH, a)
+    psi_m1 = psi_q(x, -1, vH, a)
 
     if Q < 0:
-        return np.conj(Phi_appendix(x, K, Kp, -Q, vH))
+        return np.conj(Phi_appendix(x, K, Kp, -Q, vH, a))
 
     if K == 0 and Kp == 0 and Q == 0:
         return (phi_p1 + phi_0 + phi_m1) / 3.0
