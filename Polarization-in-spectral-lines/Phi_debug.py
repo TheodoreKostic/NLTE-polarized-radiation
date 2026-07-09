@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -346,8 +346,10 @@ for ix, x in enumerate(xgrid):
 
     # K=2 blocks
     for Q in [-2,-1,0,1,2]:
-        phase = (-1)**Q
-        rhoQ = rho2[idx(-Q)]
+        #phase = (-1)**Q
+        #rhoQ = np.conj(rho2[idx(-Q)])
+        phase = 1
+        rhoQ = rho2[idx(Q)]
 
         Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -640,7 +642,7 @@ def compute_stokes_profiles(
 
         for Q in [-2, -1, 0, 1, 2]:
             phase = (-1) ** Q
-            rhoQ = rho2[idx(-Q)]
+            rhoQ = np.conj(rho2[idx(-Q)])
 
             Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
             epsI += phase * Phi20 * T_choice(0, 0, Q) * rhoQ
@@ -761,7 +763,7 @@ def compute_stokes_profiles_appendix(
 
         for Q in [-2, -1, 0, 1, 2]:
             phase = (-1) ** Q
-            rhoQ = rho2[idx(-Q)]
+            rhoQ = np.conj(rho2[idx(-Q)])
 
             Phi20 = Phi_appendix(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
             epsI += phase * Phi20 * T_choice(0, 0, Q) * rhoQ
@@ -853,7 +855,7 @@ def compute_stokes_profiles_phi(
 
         for Q in [-2, -1, 0, 1, 2]:
             phase = (-1) ** Q
-            rhoQ = rho2[idx(-Q)]
+            rhoQ = np.conj(rho2[idx(-Q)])
 
             Phi20 = Phi_choice(2, 0, Q, x)
             epsI += phase * Phi20 * T(0, 0, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
@@ -939,7 +941,7 @@ def compare_k01_v_block(x_value=0.0):
 
     for Q in [-2, -1, 0, 1, 2]:
         phase = (-1) ** Q
-        rhoQ = rho2[idx(-Q)]
+        rhoQ = np.conj(rho2[idx(-Q)])
 
         Phi21 = Phi_generalized(np.array([x_value]), K=2, Kp=1, Q=Q, vH=vH, a=a_voigt)[0]
         epsV_without += phase * Phi21 * T(3, 1, Q, theta_obs, chi_obs, gamma_obs) * rhoQ
@@ -952,3 +954,16 @@ V_without, V_with = compare_k01_v_block(x_value=np.linspace(-5, 5, 501))  # x=0.
 print("V(x=0) without K=0,K'=1 block:", V_without)
 print("V(x=0) with    K=0,K'=1 block:", V_with)
 print("delta V(x=0):", V_with - V_without)
+
+# Symmetry
+print("\n=== Symmetry check for rho(Q) ===")
+for Q in [-2, -1, 0, 1, 2]:
+    lhs = rho[idx(Q)]
+    rhs = (-1)**Q * (rho[idx(-Q)])
+    print(f"Q={Q}: rho={lhs}, (-1)^Q * conj(rho[-Q])={rhs}, diff={lhs-rhs}")
+
+print("\nTensor values for K'=2, i=1 (Stokes Q) and i=2 (Stokes U):")
+for Q in [-2, -1, 0, 1, 2]:
+    T_Q = T(1, 2, Q, theta_obs, chi_obs, gamma_obs) # Stokes Q
+    T_U = T(2, 2, Q, theta_obs, chi_obs, gamma_obs) # Stokes U
+    print(f"Q={Q}: T_Q={T_Q}, T_U={T_U}")
