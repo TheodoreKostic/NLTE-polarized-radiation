@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -346,10 +346,10 @@ for ix, x in enumerate(xgrid):
 
     # K=2 blocks
     for Q in [-2,-1,0,1,2]:
-        #phase = (-1)**Q
-        #rhoQ = np.conj(rho2[idx(-Q)])
-        phase = 1
-        rhoQ = rho2[idx(Q)]
+        phase = (-1)**Q
+        rhoQ = np.conj(rho2[idx(-Q)])
+        #phase = 1
+        #rhoQ = rho2[idx(Q)]
 
         Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -967,3 +967,93 @@ for Q in [-2, -1, 0, 1, 2]:
     T_Q = T(1, 2, Q, theta_obs, chi_obs, gamma_obs) # Stokes Q
     T_U = T(2, 2, Q, theta_obs, chi_obs, gamma_obs) # Stokes U
     print(f"Q={Q}: T_Q={T_Q}, T_U={T_U}")
+
+for Q in [-1,0,1]:
+    Phi = np.array([
+        Phi_generalized(np.array([x]),2,1,Q,vH,a=a_voigt)[0]
+        for x in xgrid
+    ])
+
+    plt.figure()
+    plt.plot(xgrid, Phi.real, label="Real")
+    plt.plot(xgrid, Phi.imag, label="Imag")
+    plt.title(f"K=2, K'=1, Q={Q}")
+    plt.legend()
+    plt.savefig(f"Phi_K2_Kp1_Q{Q}.png", dpi=300)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4), sharex=True, sharey=True)
+
+for ax, Q in zip(axes, [-1, 0, 1]):
+    Phi = np.array([
+        Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a = a_voigt)[0]
+        for x in xgrid
+    ])
+
+    ax.plot(xgrid, Phi.real, label="Real")
+    ax.plot(xgrid, Phi.imag, label="Imag")
+    ax.set_title(f"$Q={Q}$")
+    ax.grid(True)
+
+axes[0].set_ylabel(r"$\Phi^{21}_Q$")
+for ax in axes:
+    ax.set_xlabel(r"$x=(\nu-\nu_0)/\Delta\nu_D$")
+
+# Show legend only once
+axes[0].legend()
+
+plt.tight_layout()
+plt.savefig("Phi_K2_Kp1_Q_all.png", dpi=300)
+
+print("i = 3")
+for Q in [-1,0,1]:
+    print(Q, T(3,1,Q,theta_obs,chi_obs,np.pi/2))
+
+print("J_arr versus rho2:")
+for Q in [-2,-1,0,1,2]:
+    print(Q, rho2[idx(Q)])
+Jarr = Jrad_to_array(Jrad_0)
+print("Jarr:", Jarr)
+print("Jarr/rho2", Jrad_to_array(Jrad_0)/rho2)
+
+print("cancellation between Q=±1")
+for Q in [-1,1]:
+
+    Phi = Phi_generalized(
+        np.array(np.array([0.0])),
+        K=2,
+        Kp=1,
+        Q=Q,
+        vH=vH,
+        a=a_voigt
+    )[0]
+
+    contrib = (
+        (-1)**Q
+        * Phi
+        * T(3,1,Q,theta_obs,chi_obs,np.pi/2)
+        * rho2[idx(Q)]
+    )
+
+    print("Q = ", Q)
+    print("Phi =", Phi)
+    print("T   =", T(3,1,Q,theta_obs,chi_obs,np.pi/2))
+    print("rho =", rho2[idx(Q)])
+    print("contrib =", contrib)
+
+print("Profile values at x=0 for K=2, K'=1, Q=±1:")
+for Q in [-1,1]:
+    print(Q)
+
+    Phi = Phi_generalized(
+        np.array(np.array([0.0])),
+        K=2,
+        Kp=1,
+        Q=Q,
+        vH=vH,
+        a=a_voigt
+    )[0]
+
+    print(Phi)
+
+for x in [-1.0, -0.5, 0.5, 1.0]:
+    print(f"x={x}, Phi={Phi_generalized(np.array([x]),2,1,-1,vH,a=a_voigt)[0]}")
