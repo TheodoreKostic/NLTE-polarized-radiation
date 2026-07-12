@@ -3,9 +3,9 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -355,6 +355,24 @@ for ix, x in enumerate(xgrid):
         epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * rhoQ
 
         Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a_voigt)[0]
+    
+        # ---------------------------------------
+        # DEBUG ONLY AT ONE FREQUENCY
+        # ---------------------------------------
+        if abs(x - 0.5) < 1e-10:
+            print(f"\nFrequency x={x}")
+            term = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            )
+
+            print(f"\nQ = {Q}")
+            print(f"Phi21 = {Phi21}")
+            print(f"T31    = {T(3,1,Q,theta_obs,chi_obs,gamma_obs)}")
+            print(f"rhoQ   = {rhoQ}")
+            print(f"term   = {term}")
         epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -369,6 +387,7 @@ for ix, x in enumerate(xgrid):
     Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
     U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
     V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
+    #print(f"Computed Stokes profiles at x={x:.3f}: I={I_prof[ix]:.6f}, Q={Q_prof[ix]:.6f}, U={U_prof[ix]:.6f}, V={V_prof[ix]}")
 
 fig, ax = plt.subplots(2,2,figsize=(12,10))
 fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
@@ -386,6 +405,16 @@ ax[1,1].set_title("V")
 
 plt.tight_layout()
 plt.savefig("Stokes_try_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
+
+fig = plt.figure(figsize=(8,6))
+plt.plot(xgrid, Q_prof/I_prof, label="P_Q")
+plt.plot(xgrid, U_prof/I_prof, label="P_U")
+plt.plot(xgrid, V_prof/I_prof, label="P_V")
+plt.xlabel("x")
+plt.ylabel("P")
+plt.title("P vs x for different Stokes parameters")
+plt.legend()
+plt.savefig("Fractional_polarization_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
 
 emissivity_breakdown(
     x=0.0,
@@ -1019,7 +1048,7 @@ print("cancellation between Q=±1")
 for Q in [-1,1]:
 
     Phi = Phi_generalized(
-        np.array(np.array([0.0])),
+        np.array(np.array([0.5])),
         K=2,
         Kp=1,
         Q=Q,
@@ -1040,12 +1069,12 @@ for Q in [-1,1]:
     print("rho =", rho2[idx(Q)])
     print("contrib =", contrib)
 
-print("Profile values at x=0 for K=2, K'=1, Q=±1:")
+print("Profile values at x=0.5 for K=2, K'=1, Q=±1:")
 for Q in [-1,1]:
-    print(Q)
+    print(f"Q = {Q}")
 
     Phi = Phi_generalized(
-        np.array(np.array([0.0])),
+        np.array(np.array([0.5])),
         K=2,
         Kp=1,
         Q=Q,
@@ -1053,7 +1082,94 @@ for Q in [-1,1]:
         a=a_voigt
     )[0]
 
-    print(Phi)
+    print(f"Phi = {Phi}")
 
-for x in [-1.0, -0.5, 0.5, 1.0]:
-    print(f"x={x}, Phi={Phi_generalized(np.array([x]),2,1,-1,vH,a=a_voigt)[0]}")
+for Q in [-1,0,1]:
+    for x in [-1.0, -0.5, 0.5, 1.0]:
+        print(f"x={x}, Q={Q}, Phi={Phi_generalized(np.array([x]),2,1,Q,vH,a=a_voigt)[0]}")
+
+print("Direct division by 1+i*Q*Hu")
+print(np.shape(Jrad_0))
+for ix, x in enumerate(xgrid):
+    Jarr = Jrad_to_array(Jrad_0)
+    J00 = Jrad_0[(0,0)]
+    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+    epsI = 0.0+0j
+    epsQ = 0.0+0j
+    epsU = 0.0+0j
+    epsV = 0.0+0j
+    # K=0 blocks
+    Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH, a=a_voigt)[0]
+    epsI += Phi00 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * J00
+
+    Phi01 = Phi_generalized(np.array([x]), K=0, Kp=1, Q=0, vH=vH, a=a_voigt)[0]
+    epsV += Phi01 * T(3,1,0, theta_obs, chi_obs, gamma_obs) * J00
+
+    Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a_voigt)[0]
+    epsI += Phi02 * T(0,2,0,theta_obs,chi_obs,gamma_obs) * J00
+    epsQ += Phi02 * T(1,2,0,theta_obs,chi_obs,gamma_obs) * J00
+    epsU += Phi02 * T(2,2,0,theta_obs,chi_obs,gamma_obs) * J00
+
+    # K=2 blocks
+    for Q in [-2,-1,0,1,2]:
+        phase = (-1)**Q
+        rhoQ = np.conj(rho2[idx(-Q)])
+        #phase = 1
+        #rhoQ = rho2[idx(Q)]
+        JQ = Jrad_0[(2, -Q)] 
+        hanle = JQ / (1 + 1j*Q*Hu)
+
+        Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
+        epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * hanle
+
+        Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a_voigt)[0]
+    
+        # ---------------------------------------
+        # DEBUG ONLY AT ONE FREQUENCY
+        # ---------------------------------------
+        if abs(x - 0.5) < 1e-10:
+            print(f"\nFrequency x={x}")
+            term = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            )
+
+            print(f"\nQ = {Q}")
+            print(f"Phi21 = {Phi21}")
+            print(f"T31    = {T(3,1,Q,theta_obs,chi_obs,gamma_obs)}")
+            print(f"rhoQ   = {rhoQ}")
+            print(f"term   = {term}")
+        epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
+        epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
+        epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
+        epsV += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
+
+        Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
+        epsI += phase * Phi22 * T(0,2,Q,theta_obs,chi_obs,gamma_obs) * hanle
+        epsQ += phase * Phi22 * T(1,2,Q,theta_obs,chi_obs,gamma_obs) * hanle
+        epsU += phase * Phi22 * T(2,2,Q,theta_obs,chi_obs,gamma_obs) * hanle
+            
+    I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
+    Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
+    U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
+    V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
+    #print(f"Computed Stokes profiles at x={x:.3f}: I={I_prof[ix]:.6f}, Q={Q_prof[ix]:.6f}, U={U_prof[ix]:.6f}, V={V_prof[ix]}")
+
+fig, ax = plt.subplots(2,2,figsize=(12,10))
+fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+ax[0,0].plot(xgrid,I_prof)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Q_prof)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,U_prof)
+ax[1,0].set_title("U")
+
+ax[1,1].plot(xgrid,V_prof)
+ax[1,1].set_title("V")
+
+plt.tight_layout()
+plt.savefig("Stokes_direct_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
