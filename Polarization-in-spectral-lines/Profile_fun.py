@@ -127,15 +127,6 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                 )
             )
             '''
-            # testing purposes
-            if K == 2 and Kp == 2 and Q == 2:
-                if abs(complex(term)) > 1e-10:
-                    print(
-                        f"Mu={Mu:2d}  Mup={Mup:2d}  "
-                        f"coeff={term:+.8f}"
-                    )
-            '''
-            '''
             if K == 2 and Kp == 2 and Q == 0:
                 coeff = (
             (-1)**(1 + Ju - Mu + qp)
@@ -162,6 +153,16 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
             )
 
             Phi += term*profile
+            # testing purposes
+            if K == 2 and Kp == 1 and Q == 0:
+                #if abs(complex(term)) > 1e-10:
+                print(
+                        f"Mu={Mu:2d} "
+                        f"Mup={Mup:2d} "
+                        f"coeff={term:+.8f} "
+                        f"profile={profile} "
+                        f"Phi={Phi} "
+                    )
 
     return pref*Phi
 
