@@ -4,8 +4,8 @@ import os
 import matplotlib.pyplot as plt
 
 #script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -19,8 +19,12 @@ a = a_voigt
 print("phi_complex(0, a=0):", phi_complex(0.0, a=0.0))
 print("phi_complex(0, a=1):", phi_complex(0.0, a=1.0))
 
+default_Delta_nu_D = 4 * 10**9 # s^-1
+B = 5.69 # Gauss
 x = np.array([0.0])
-vH = 0.002
+#vH = 0.002
+vH = 1.3996e6 * B / default_Delta_nu_D
+
 
 P0 = Phi_generalized(x, K=2, Kp=2, Q=0, vH=vH, a=0.0)[0]
 P1 = Phi_generalized(x, K=2, Kp=2, Q=0, vH=vH, a=1.0)[0]
@@ -229,7 +233,8 @@ def emissivity_breakdown(
 
 Jrad_0 = radiation_tensor(hR=0.073)
 Hu = 1.0 # depends on B
-vH = 0.002
+#vH = 0.002
+vH = 1.3996e6 * B / default_Delta_nu_D
 
 xgrid = np.linspace(-5,5,401)
 
@@ -373,6 +378,8 @@ for ix, x in enumerate(xgrid):
             print(f"T31    = {T(3,1,Q,theta_obs,chi_obs,gamma_obs)}")
             print(f"rhoQ   = {rhoQ}")
             print(f"term   = {term}")
+            print(f"term.real   = {term.real}")
+            print(f"term.imag   = {term.imag}")
         epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -1140,7 +1147,8 @@ for ix, x in enumerate(xgrid):
             print(f"Phi21 = {Phi21}")
             print(f"T31    = {T(3,1,Q,theta_obs,chi_obs,gamma_obs)}")
             print(f"rhoQ   = {rhoQ}")
-            print(f"term   = {term}")
+            print(f"term.real   = {term.real}")
+            print(f"term.imag   = {term.imag}")
         epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
         epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
         epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * hanle
