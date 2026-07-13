@@ -151,8 +151,9 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                 phi_transition_complex(x, Mu, Ml, vH, a)
                 + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
             )
-
+            
             Phi += term*profile
+            '''
             # testing purposes
             if K == 2 and Kp == 1 and Q == 0:
                 #if abs(complex(term)) > 1e-10:
@@ -163,7 +164,7 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                         f"profile={profile} "
                         f"Phi={Phi} "
                     )
-
+            '''
     return pref*Phi
 
 # Profile function based on Appendix A13 form LL04

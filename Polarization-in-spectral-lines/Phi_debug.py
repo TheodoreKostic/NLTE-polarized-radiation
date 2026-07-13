@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -349,6 +349,8 @@ for ix, x in enumerate(xgrid):
     epsQ += Phi02 * T(1,2,0,theta_obs,chi_obs,gamma_obs) * J00
     epsU += Phi02 * T(2,2,0,theta_obs,chi_obs,gamma_obs) * J00
 
+    V21 = 0+0j
+
     # K=2 blocks
     for Q in [-2,-1,0,1,2]:
         phase = (-1)**Q
@@ -377,6 +379,7 @@ for ix, x in enumerate(xgrid):
             print(f"Phi21 = {Phi21}")
             print(f"T31    = {T(3,1,Q,theta_obs,chi_obs,gamma_obs)}")
             print(f"rhoQ   = {rhoQ}")
+            print(f"Product = {rhoQ * Phi21}")
             print(f"term   = {term}")
             print(f"term.real   = {term.real}")
             print(f"term.imag   = {term.imag}")
@@ -384,6 +387,9 @@ for ix, x in enumerate(xgrid):
         epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsV += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        if abs(x - 0.5) < 1e-10:
+            V21 += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+            print("V21 contribution for Q =", Q, "is", V21)
 
         Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi22 * T(0,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -1119,12 +1125,12 @@ for ix, x in enumerate(xgrid):
 
     # K=2 blocks
     for Q in [-2,-1,0,1,2]:
-        phase = (-1)**Q
+        #phase = (-1)**Q
         rhoQ = np.conj(rho2[idx(-Q)])
-        #phase = 1
+        phase = 1
         #rhoQ = rho2[idx(Q)]
-        JQ = Jrad_0[(2, -Q)] 
-        hanle = JQ / (1 + 1j*Q*Hu)
+        JQ = Jrad_0[(2, -Q)]
+        hanle = (-1)**Q * JQ / (1 - 1j*Q*Hu)
 
         Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * hanle
@@ -1181,3 +1187,23 @@ ax[1,1].set_title("V")
 
 plt.tight_layout()
 plt.savefig("Stokes_direct_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
+
+Phi20_array = np.array([
+    Phi_generalized(np.array([xx]),2,0,1,vH,a_voigt)[0]
+    for xx in xgrid
+])
+
+
+Phi21_array = np.array([
+    Phi_generalized(np.array([xx]),2,1,1,vH,a_voigt)[0]
+    for xx in xgrid
+])
+
+Phi22_array = np.array([
+    Phi_generalized(np.array([xx]),2,2,1,vH,a_voigt)[0]
+    for xx in xgrid])
+ 
+print("Max values of Phi20, Phi21, Phi22 for Q=1:")
+print(f"Phi20: {np.max(np.abs(Phi20_array))}")
+print(f"Phi21: {np.max(np.abs(Phi21_array))}")
+print(f"Phi22: {np.max(np.abs(Phi22_array))}")
