@@ -1207,3 +1207,65 @@ print("Max values of Phi20, Phi21, Phi22 for Q=1:")
 print(f"Phi20: {np.max(np.abs(Phi20_array))}")
 print(f"Phi21: {np.max(np.abs(Phi21_array))}")
 print(f"Phi22: {np.max(np.abs(Phi22_array))}")
+
+from scipy.special import wofz
+
+xgrid = np.linspace(-5,5,101)
+
+phi_conv = np.zeros_like(xgrid,dtype=complex)
+phi_wofz = np.zeros_like(xgrid,dtype=complex)
+
+for i,x in enumerate(xgrid):
+
+    phi_conv[i] = Phi_convolved(
+        x,
+        A_ul,
+        default_Delta_nu_D
+    )
+
+    phi_wofz[i] = wofz(x+1j*a_voigt)/np.sqrt(np.pi)
+
+print(phi_conv[50], phi_wofz[50])
+
+
+plt.figure(figsize=(8,5))
+
+plt.plot(xgrid,
+         np.real(phi_conv),
+         label="Convolution")
+
+plt.plot(xgrid,
+         np.real(phi_wofz),
+         "--",
+         label="wofz")
+
+plt.legend()
+plt.xlabel("x")
+plt.ylabel("Real part")
+plt.grid()
+plt.savefig("phi_convolution_vs_wofz_real.png", dpi=300)
+
+plt.figure(figsize=(8,5))
+
+plt.plot(xgrid,
+         np.imag(phi_conv),
+         label="Convolution")
+
+plt.plot(xgrid,
+         np.imag(phi_wofz),
+         "--",
+         label="wofz")
+
+plt.legend()
+plt.xlabel("x")
+plt.ylabel("Imaginary part")
+plt.grid()
+plt.savefig("phi_convolution_vs_wofz_imaginary.png", dpi=300)
+
+diff = phi_conv - phi_wofz
+
+print("Maximum real error:",
+      np.max(np.abs(diff.real)))
+
+print("Maximum imaginary error:",
+      np.max(np.abs(diff.imag)))
