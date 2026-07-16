@@ -231,9 +231,13 @@ def emissivity_breakdown(
     print("Q/I =", np.real(Qtot)/np.real(Itot))
     print("U/I =", np.real(Utot)/np.real(Itot))
 
+mu_B = 9.274 * 10e-21
+h = 6.626 * 10e-27
+#vH = mu_B * B / h / default_Delta_nu_D
 Jrad_0 = radiation_tensor(hR=0.073)
-Hu = 1.0 # depends on B
-#vH = 0.0
+#Hu = 3.0 # depends on B
+#vH = 0.5
+Hu = hanle_parameter_exact(5.69, 1.0, A_ul)
 vH = 1.3996e6 * B / default_Delta_nu_D
 
 print("vH = ", vH)
@@ -1258,7 +1262,10 @@ Phi22_array = np.array([
                     vH=vH, a=a_voigt)[0]
     for xx in xgrid
 ])
-
+'''
+for xx in xgrid:
+    print(f"x={xx:.3f}, Phi20/Phi22={Phi20_array[np.where(xgrid==xx)][0]/Phi22_array[np.where(xgrid==xx)][0]:.3e}, Phi21/Phi22={Phi21_array[np.where(xgrid==xx)][0]/Phi22_array[np.where(xgrid==xx)][0]:.3e}")
+'''
 plt.figure(figsize=(8,6))
 plt.plot(xgrid, np.real(Phi20_array), label="Phi20")
 plt.plot(xgrid, np.real(Phi21_array), label="Phi21")
@@ -1398,3 +1405,8 @@ print("Maximum real error:",
 
 print("Maximum imaginary error:",
       np.max(np.abs(diff.imag)))
+
+Hanle_exact = hanle_parameter_exact(5.69, 1.0, A_ul)
+print("Hanle_exact =", Hanle_exact)
+hanle_parameter = hanle_parameter(5.69, 1.0, A_ul)
+print("Hanle_parameter =", hanle_parameter)
