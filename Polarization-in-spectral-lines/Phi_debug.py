@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -233,8 +233,11 @@ def emissivity_breakdown(
 
 Jrad_0 = radiation_tensor(hR=0.073)
 Hu = 1.0 # depends on B
-#vH = 0.002
+#vH = 0.0
 vH = 1.3996e6 * B / default_Delta_nu_D
+
+print("vH = ", vH)
+print("a_voigt = ", a_voigt)
 
 xgrid = np.linspace(-5,5,401)
 
@@ -333,6 +336,9 @@ for ix, x in enumerate(xgrid):
     Jarr = Jrad_to_array(Jrad_0)
     J00 = Jrad_0[(0,0)]
     rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+    #print("\nFrequency x = ", x)
+    #print("rho2 real:", np.real(rho2))
+    #print("rho2 imag:", np.imag(rho2))
     epsI = 0.0+0j
     epsQ = 0.0+0j
     epsU = 0.0+0j
@@ -417,7 +423,7 @@ ax[1,1].plot(xgrid,V_prof)
 ax[1,1].set_title("V")
 
 plt.tight_layout()
-plt.savefig("Stokes_try_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
+plt.savefig("Stokes_try_Hu{}_gamma{}_theta{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs), vH), dpi = 300)
 
 fig = plt.figure(figsize=(8,6))
 plt.plot(xgrid, Q_prof/I_prof, label="P_Q")
@@ -427,7 +433,7 @@ plt.xlabel("x")
 plt.ylabel("P")
 plt.title("P vs x for different Stokes parameters")
 plt.legend()
-plt.savefig("Fractional_polarization_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
+plt.savefig("Fractional_polarization_Hu{}_gamma{}_theta{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs), vH), dpi = 300)
 
 emissivity_breakdown(
     x=0.0,
@@ -1046,6 +1052,31 @@ axes[0].legend()
 plt.tight_layout()
 plt.savefig("Phi_K2_Kp1_Q_all.png", dpi=300)
 
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4), sharex=True, sharey=True)
+
+for ax, Q in zip(axes, [-1, 0, 1]):
+    Phi = np.array([
+        Phi_appendix(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a = a_voigt)[0]
+        for x in xgrid
+    ])
+
+    ax.plot(xgrid, Phi.real, label="Real")
+    ax.plot(xgrid, Phi.imag, label="Imag")
+    ax.set_title(f"$Q={Q}$")
+    ax.grid(True)
+
+axes[0].set_ylabel(r"$\Phi^{21}_Q$")
+for ax in axes:
+    ax.set_xlabel(r"$x=(\nu-\nu_0)/\Delta\nu_D$")
+
+# Show legend only once
+axes[0].legend()
+
+plt.tight_layout()
+plt.savefig("Phi_K2_Kp1_Q_all_appendix.png", dpi=300)
+
+
 print("i = 3")
 for Q in [-1,0,1]:
     print(Q, T(3,1,Q,theta_obs,chi_obs,np.pi/2))
@@ -1207,3 +1238,101 @@ print("Max values of Phi20, Phi21, Phi22 for Q=1:")
 print(f"Phi20: {np.max(np.abs(Phi20_array))}")
 print(f"Phi21: {np.max(np.abs(Phi21_array))}")
 print(f"Phi22: {np.max(np.abs(Phi22_array))}")
+
+# Freq
+
+Phi20_array = np.array([
+    Phi_generalized(np.array([xx]), K=2, Kp=0, Q=1,
+                    vH=vH, a=a_voigt)[0]
+    for xx in xgrid
+])
+
+Phi21_array = np.array([
+    Phi_generalized(np.array([xx]), K=2, Kp=1, Q=1,
+                    vH=vH, a=a_voigt)[0]
+    for xx in xgrid
+])
+
+Phi22_array = np.array([
+    Phi_generalized(np.array([xx]), K=2, Kp=2, Q=1,
+                    vH=vH, a=a_voigt)[0]
+    for xx in xgrid
+])
+
+plt.figure(figsize=(8,6))
+plt.plot(xgrid, np.real(Phi20_array), label="Phi20")
+plt.plot(xgrid, np.real(Phi21_array), label="Phi21")
+plt.plot(xgrid, np.real(Phi22_array), label="Phi22")
+plt.legend()
+plt.savefig("Phi_K2_Q1_real.png", dpi=300)
+
+plt.figure(figsize=(8,6))
+
+plt.plot(
+    xgrid,
+    np.real(Phi20_array),
+    label="Phi20"
+)
+
+plt.plot(
+    xgrid,
+    np.real(Phi21_array)/np.max(np.abs(Phi21_array)),
+    label="Phi21"
+)
+
+plt.plot(
+    xgrid,
+    np.real(Phi22_array)/np.max(np.abs(Phi22_array)),
+    label="Phi22"
+)
+
+plt.legend()
+plt.savefig("Phi_K2_Q1_real_normalized.png", dpi=300)
+
+Phi20_0array = np.array([
+    Phi_generalized(np.array([xx]), K=2, Kp=0, Q=0,
+                    vH=vH, a=a_voigt)[0]
+    for xx in xgrid
+])
+
+Phi21_0array = np.array([
+    Phi_generalized(np.array([xx]), K=2, Kp=1, Q=0,
+                    vH=vH, a=a_voigt)[0]
+    for xx in xgrid
+])
+
+Phi22_0array = np.array([
+    Phi_generalized(np.array([xx]), K=2, Kp=2, Q=0,
+                    vH=vH, a=a_voigt)[0]
+    for xx in xgrid
+])
+
+plt.figure(figsize=(8,6))
+plt.plot(xgrid, np.real(Phi20_0array), label="Phi20_0")
+plt.plot(xgrid, np.real(Phi21_0array), label="Phi21_0")
+plt.plot(xgrid, np.real(Phi22_0array), label="Phi22_0")
+plt.legend()
+plt.savefig("Phi_K2_Q0_real.png", dpi=300)
+
+plt.figure(figsize=(8,6))
+
+plt.plot(
+    xgrid,
+    np.real(Phi20_0array),
+    label="Phi20_0"
+)
+
+plt.plot(
+    xgrid,
+    np.real(Phi21_0array)/np.max(np.abs(Phi21_0array)),
+    label="Phi21_0"
+)
+
+plt.plot(
+    xgrid,
+    np.real(Phi22_0array)/np.max(np.abs(Phi22_0array)),
+    label="Phi22_0"
+)
+
+plt.legend()
+plt.savefig("Phi_K2_Q0_real_normalized.png", dpi=300)
