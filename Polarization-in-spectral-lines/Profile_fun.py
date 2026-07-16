@@ -86,7 +86,7 @@ def Phi_convolved(
 
     def real_integrand(u):
 
-        delta_nu = Delta_nu_D*(u-x)
+        delta_nu = Delta_nu_D*(x-u)
 
         return (
             maxwell(u)
@@ -100,7 +100,7 @@ def Phi_convolved(
 
     def imag_integrand(u):
 
-        delta_nu = Delta_nu_D*(u-x)
+        delta_nu = Delta_nu_D*(x-u)
 
         return (
             maxwell(u)
@@ -128,7 +128,7 @@ def Phi_convolved(
         epsrel=1e-10
     )[0]
 
-    return Delta_nu_D*(re + 1j*im)
+    return (re + 1j*im)
 
 
 # ------------------------------------------------------------
@@ -172,6 +172,42 @@ def phi_transition(x, Mu, Ml, vH):
 # That complex structure is what generates the antisymmetric 
 # dispersion-like behavior needed for V. 
 # With only a real Gaussian, V stays Gaussian and very small.
+
+def profile_1042(
+        x,
+        Mu,
+        Mup,
+        Ml,
+        Gamma,
+        Delta_nu_D,
+        nuL_g):
+    """
+    Eq. (10.42) of LL04.
+
+    Returns the profile BEFORE Doppler convolution.
+    """
+    Delta_nu_D = default_Delta_nu_D
+    # line-center frequencies
+    nu1 = (Mu - Ml) * nuL_g
+    nu2 = (Mup - Ml) * nuL_g
+
+    # convert reduced frequency to Hz
+    nu = x * Delta_nu_D
+
+    num = (
+        2*Gamma
+        + 1j*nuL_g*(Mup-Mu)
+    )
+
+    den = (
+        (Gamma - 1j*(nu1-nu))
+        *
+        (Gamma + 1j*(nu2-nu))
+    )
+
+    return num/(2*np.pi*den)
+
+
 
 def phi_complex(x, a):
     return wofz(x + 1j*a) / np.sqrt(np.pi)
@@ -252,12 +288,12 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                     "vH = ", vH
                 )
               '''  
-            profile = 0.5 * (
-                phi_transition_complex(x, Mu, Ml, vH, a)
-                + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
-            )
+            #profile = 0.5 * (
+            #    phi_transition_complex(x, Mu, Ml, vH, a)
+            #    + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
+            #)
             
-            Phi += term*profile
+            #Phi += term*profile
             '''
             # testing purposes
             if K == 2 and Kp == 1 and Q == 0:
@@ -270,6 +306,16 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                         f"Phi={Phi} "
                     )
             '''
+            profile = profile_1042(
+                x,
+                Mu,
+                Mup,
+                Ml,
+                A_ul/4*np.pi,
+                default_Delta_nu_D,
+                1.3996e6
+            )
+            Phi += term * profile
     return pref*Phi
 
 # Profile function based on Appendix A13 form LL04
