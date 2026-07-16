@@ -2,6 +2,7 @@ import numpy as np
 import sys
 import os
 from scipy.special import wofz
+from scipy.integrate import quad
 import matplotlib.pyplot as plt
 
 script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
@@ -45,6 +46,110 @@ def zeeman_shift_parameter(B, gJ=1.0, Delta_nu_D=default_Delta_nu_D):
     nu_L = 1.3996e6 * B
     return gJ * nu_L / Delta_nu_D
 
+# What if define phi step-by-step instead of using wofz?
+# ---------------------------------------------------
+# Physical constants
+# ---------------------------------------------------
+
+c = 2.99792458e8      # m/s
+
+# ---------------------------------------------------
+# Maxwellian
+# ---------------------------------------------------
+
+def maxwell(u):
+
+    return np.exp(-u*u)/np.sqrt(np.pi)
+
+# ---------------------------------------------------
+# Atomic Lorentz profile in FREQUENCY units
+# ---------------------------------------------------
+
+def Phi_atomic(delta_nu, Gamma):
+
+    gamma = Gamma/(4*np.pi)
+
+    phi = gamma/(np.pi*(delta_nu**2 + gamma**2))
+
+    psi = delta_nu/(np.pi*(delta_nu**2 + gamma**2))
+
+    return phi + 1j*psi
+
+# ---------------------------------------------------
+# Literal Eq. (13.16)
+# ---------------------------------------------------
+
+def Phi_convolved(
+        x,
+        Gamma,
+        Delta_nu_D):
+
+    def real_integrand(u):
+
+        delta_nu = Delta_nu_D*(u-x)
+
+        return (
+            maxwell(u)
+            * np.real(
+                Phi_atomic(
+                    delta_nu,
+                    Gamma
+                )
+            )
+        )
+
+    def imag_integrand(u):
+
+        delta_nu = Delta_nu_D*(u-x)
+
+        return (
+            maxwell(u)
+            * np.imag(
+                Phi_atomic(
+                    delta_nu,
+                    Gamma
+                )
+            )
+        )
+
+    re = quad(
+        real_integrand,
+        -8,
+        8,
+        epsabs=1e-10,
+        epsrel=1e-10
+    )[0]
+
+    im = quad(
+        imag_integrand,
+        -8,
+        8,
+        epsabs=1e-10,
+        epsrel=1e-10
+    )[0]
+
+    return Delta_nu_D*(re + 1j*im)
+
+
+# ------------------------------------------------------------
+# Zeeman-shifted transition profile
+# ------------------------------------------------------------
+
+def phi_transition_convolved(
+        x,
+        Mu,
+        Ml,
+        vH,
+        Gamma,
+        Delta_nu_D):
+
+    shift = (Mu-Ml)*vH
+
+    return Phi_convolved(
+        x-shift,
+        Gamma,
+        Delta_nu_D
+    )
 
 # Define Φ^QKK′​ as per Eq. (10.40) from LL04
 
@@ -76,7 +181,7 @@ def phi_transition_complex(x, Mu, Ml, vH, a):
     shift = (Mu - Ml) * vH
     return phi_complex(x - shift, a)
 
-
+# Main part, the generalized profile function Φ^QKK′​, as per Eq. (10.40) from LL04.
 def Phi_generalized(x, K, Kp, Q, vH, a):
     """
     Eq. (10.40)
@@ -169,7 +274,6 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
 
 # Profile function based on Appendix A13 form LL04
 # Properties of Generalized Profiles
-
 def phi_q(x, q, vH, a):
     """
     Appendix definition for q = -1,0,+1.
@@ -236,7 +340,5 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
         return 0.5 * (phi_p1 + 1j * psi_p1 + phi_m1 - 1j * psi_m1)
 
     return np.zeros_like(x, dtype=np.complex128)
-
-
 
 # After this we can go to response functions!
