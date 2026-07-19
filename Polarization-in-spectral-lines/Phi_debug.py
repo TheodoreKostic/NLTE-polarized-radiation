@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -235,15 +235,15 @@ mu_B = 9.274 * 10e-21
 h = 6.626 * 10e-27
 #vH = mu_B * B / h / default_Delta_nu_D
 Jrad_0 = radiation_tensor(hR=0.073)
-#Hu = 3.0 # depends on B
-#vH = 0.5
+#Hu = 1.0 # depends on B
+#vH = 0.2
 Hu = hanle_parameter_exact(5.69, 1.0, A_ul)
 vH = 1.3996e6 * B / default_Delta_nu_D
 
 print("vH = ", vH)
 print("a_voigt = ", a_voigt)
 
-xgrid = np.linspace(-5,5,401)
+xgrid = np.linspace(-5,5,101)
 
 I_prof = np.zeros_like(xgrid)
 Q_prof = np.zeros_like(xgrid)
@@ -438,6 +438,7 @@ plt.ylabel("P")
 plt.title("P vs x for different Stokes parameters")
 plt.legend()
 plt.savefig("Fractional_polarization_Hu{}_gamma{}_theta{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs), vH), dpi = 300)
+plt.close()
 
 emissivity_breakdown(
     x=0.0,
@@ -483,6 +484,7 @@ plt.ylabel("Phi")
 plt.title("Phi vs x for different Q values")
 plt.legend()
 plt.savefig("Phi_debug_1.png", dpi = 300)
+plt.close()
 
 for K in [0,1,2]:
     for Kp in [0,1,2]:
@@ -744,6 +746,7 @@ for row, label, data_T, data_B in [
 
 plt.tight_layout()
 plt.savefig("Stokes_compare_T_Tbook_Hu{}.png".format(Hu), dpi=300)
+plt.close()
 print("Saved: Stokes_compare_T_Tbook_Hu{}.png".format(Hu))
 
 # Comparison
@@ -773,6 +776,7 @@ def compare_appendix_phi():
     plt.legend()
     plt.tight_layout()
     plt.savefig("Phi_appendix_vs_generalized.png", dpi=300)
+    plt.close()
 
 #compare_appendix_phi()
 
@@ -865,6 +869,7 @@ for row, label, data_T, data_B in [
 
 plt.tight_layout()
 plt.savefig("Stokes_compare_T_Tbook_Hu{}_phi_appendix.png".format(Hu), dpi=300)
+plt.close()
 print("Saved: Stokes_compare_T_Tbook_Hu{}_phi_appendix.png".format(Hu))
 
 # Hu = 0.0 for testing
@@ -955,6 +960,7 @@ for row, label, data_gen, data_app in [
 
 plt.tight_layout()
 plt.savefig("Stokes_compare_Phi_generalized_vs_appendix_Hu{}.png".format(Hu), dpi=300)
+plt.close()
 print("Saved: Stokes_compare_Phi_generalized_vs_appendix_Hu{}.png".format(Hu))
 
 x = np.linspace(-5, 5, 501)
@@ -969,6 +975,7 @@ plt.plot(x, np.imag(phi_no_damp), 'b-', label='Im, a=0')
 plt.plot(x, np.imag(phi_damp), 'b--', label=f'Im, a={a_plot:.1e}')
 plt.legend()
 plt.savefig("phi_complex_damping_comparison.png", dpi=300)
+plt.close()
 print("Saved: phi_complex_damping_comparison.png")
 
 def compare_k01_v_block(x_value=0.0):
@@ -1055,6 +1062,7 @@ axes[0].legend()
 
 plt.tight_layout()
 plt.savefig("Phi_K2_Kp1_Q_all.png", dpi=300)
+plt.close()
 
 
 fig, axes = plt.subplots(1, 3, figsize=(15, 4), sharex=True, sharey=True)
@@ -1079,6 +1087,7 @@ axes[0].legend()
 
 plt.tight_layout()
 plt.savefig("Phi_K2_Kp1_Q_all_appendix.png", dpi=300)
+plt.close()
 
 
 print("i = 3")
@@ -1222,6 +1231,7 @@ ax[1,1].set_title("V")
 
 plt.tight_layout()
 plt.savefig("Stokes_direct_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
+plt.close()
 
 Phi20_array = np.array([
     Phi_generalized(np.array([xx]),2,0,1,vH,a_voigt)[0]
@@ -1272,6 +1282,7 @@ plt.plot(xgrid, np.real(Phi21_array), label="Phi21")
 plt.plot(xgrid, np.real(Phi22_array), label="Phi22")
 plt.legend()
 plt.savefig("Phi_K2_Q1_real.png", dpi=300)
+plt.close()
 
 plt.figure(figsize=(8,6))
 
@@ -1295,6 +1306,7 @@ plt.plot(
 
 plt.legend()
 plt.savefig("Phi_K2_Q1_real_normalized.png", dpi=300)
+plt.close()
 
 Phi20_0array = np.array([
     Phi_generalized(np.array([xx]), K=2, Kp=0, Q=0,
@@ -1320,6 +1332,7 @@ plt.plot(xgrid, np.real(Phi21_0array), label="Phi21_0")
 plt.plot(xgrid, np.real(Phi22_0array), label="Phi22_0")
 plt.legend()
 plt.savefig("Phi_K2_Q0_real.png", dpi=300)
+plt.close()
 
 plt.figure(figsize=(8,6))
 
@@ -1343,6 +1356,7 @@ plt.plot(
 
 plt.legend()
 plt.savefig("Phi_K2_Q0_real_normalized.png", dpi=300)
+plt.close()
 
 from scipy.special import wofz
 
@@ -1397,6 +1411,7 @@ plt.xlabel("x")
 plt.ylabel("Imaginary part")
 plt.grid()
 plt.savefig("phi_convolution_vs_wofz_imaginary.png", dpi=300)
+plt.close()
 
 diff = phi_conv - phi_wofz
 
@@ -1406,7 +1421,289 @@ print("Maximum real error:",
 print("Maximum imaginary error:",
       np.max(np.abs(diff.imag)))
 
-Hanle_exact = hanle_parameter_exact(5.69, 1.0, A_ul)
-print("Hanle_exact =", Hanle_exact)
-hanle_parameter = hanle_parameter(5.69, 1.0, A_ul)
-print("Hanle_parameter =", hanle_parameter)
+fig, ax = plt.subplots(4, 3, figsize=(15, 16), sharex=True)
+
+profiles = [
+    (0,0,0),
+    (0,1,0),
+    (0,2,0),
+
+    (2,0,0),
+    (2,1,-1),
+    (2,1,0),
+
+    (2,1,1),
+    (2,2,-2),
+    (2,2,-1),
+
+    (2,2,0),
+    (2,2,1),
+    (2,2,2),
+]
+
+for axi, (K,Kp,Q) in zip(ax.flat, profiles):
+
+    Phi = np.array([
+        Phi_generalized(np.array([xx]), K, Kp, Q, vH, a_voigt)[0]
+        for xx in xgrid
+    ])
+    #Phi /= np.max(np.abs(Phi)) # for normalization
+    axi.plot(xgrid,
+             Phi.real,
+             label="Re")
+
+    axi.plot(xgrid,
+             Phi.imag,
+             "--",
+             label="Im")
+
+    axi.set_title(f"K={K}, K'={Kp}, Q={Q}")
+    axi.grid(True)
+
+ax[0,0].legend()
+
+fig.supxlabel("Reduced frequency x")
+fig.supylabel(r"$\Phi^{Q}_{KK'}$")
+
+plt.tight_layout()
+
+plt.savefig("Generalized_profiles_vH{}.png".format(vH), dpi=300)
+plt.close()
+
+# 19. 07. 2026. 
+# Store every individual contribution to V
+V_terms = {}
+V10   = np.zeros_like(xgrid)
+V21m1 = np.zeros_like(xgrid)
+V210  = np.zeros_like(xgrid)
+V21p1 = np.zeros_like(xgrid)
+for ix, x in enumerate(xgrid):
+
+    Jarr = Jrad_to_array(Jrad_0)
+    J00  = Jrad_0[(0,0)]
+
+    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+
+    epsI = 0.0 + 0j
+    epsQ = 0.0 + 0j
+    epsU = 0.0 + 0j
+    epsV = 0.0 + 0j
+
+    # ------------------------------------
+    # K = 0 contributions
+    # ------------------------------------
+
+    Phi00 = Phi_generalized(
+        np.array([x]), 0,0,0,vH,a_voigt
+    )[0]
+
+    epsI += (
+        Phi00
+        * T(0,0,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    Phi01 = Phi_generalized(
+        np.array([x]),0,1,0,vH,a_voigt
+    )[0]
+
+    term10 = (
+        Phi01
+        * T(3,1,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    key = (0, 1, 0)
+
+    if key not in V_terms:
+        V_terms[key] = np.zeros_like(xgrid)
+
+    V_terms[key][ix] = np.real(term10)
+
+    Phi02 = Phi_generalized(
+        np.array([x]),0,2,0,vH,a_voigt
+    )[0]
+
+    epsI += (
+        Phi02
+        * T(0,2,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    epsQ += (
+        Phi02
+        * T(1,2,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    epsU += (
+        Phi02
+        * T(2,2,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    # ------------------------------------
+    # K = 2 contributions
+    # ------------------------------------
+
+    for Q in [-2,-1,0,1,2]:
+
+        phase = (-1)**Q
+        rhoQ  = np.conj(rho2[idx(-Q)])
+
+        # -------------------------
+        # K=2 -> K'=0
+        # -------------------------
+
+        Phi20 = Phi_generalized(
+            np.array([x]),2,0,Q,vH,a_voigt
+        )[0]
+
+        epsI += (
+            phase
+            * Phi20
+            * T(0,0,0,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        # -------------------------
+        # K=2 -> K'=1
+        # -------------------------
+
+        Phi21 = Phi_generalized(
+            np.array([x]),2,1,Q,vH,a_voigt
+        )[0]
+
+        term21I = (
+            phase
+            * Phi21
+            * T(0,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        term21Q = (
+            phase
+            * Phi21
+            * T(1,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        term21U = (
+            phase
+            * Phi21
+            * T(2,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        term21V = (
+            phase
+            * Phi21
+            * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+        if abs(term21V) > 0:
+            print(
+                "Q", Q,
+                "term21V", term21V,
+                np.max(np.abs(term21V)),
+                "term21V real max", np.max(np.abs(np.real(term21V))),
+                np.max(np.abs(np.real(term21V))),
+                "term21V imag max",
+                np.max(np.abs(np.imag(term21V)))
+            )
+        epsI += term21I
+        epsQ += term21Q
+        epsU += term21U
+        epsV += term21V
+
+        # Store each individual V contribution
+
+        if Q == -1:
+            V21m1[ix] = np.real(term21V)
+
+        elif Q == 0:
+            V210[ix] = np.real(term21V)
+
+        elif Q == 1:
+            V21p1[ix] = np.real(term21V)
+
+        key = (2, 1, Q)
+
+        if key not in V_terms:
+            V_terms[key] = np.zeros_like(xgrid)
+
+        V_terms[key][ix] = np.real(term21V)
+
+        # -------------------------
+        # K=2 -> K'=2
+        # -------------------------
+
+        Phi22 = Phi_generalized(
+            np.array([x]),2,2,Q,vH,a_voigt
+        )[0]
+
+        epsI += (
+            phase
+            * Phi22
+            * T(0,2,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        epsQ += (
+            phase
+            * Phi22
+            * T(1,2,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        epsU += (
+            phase
+            * Phi22
+            * T(2,2,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+    # ------------------------------------
+    # Store Stokes profiles
+    # ------------------------------------
+    check = (
+    V21m1[ix]
+    + V210[ix]
+    + V21p1[ix]
+    )
+
+    print(
+        "x", ix,
+        "check", check,
+        np.real(epsV)
+    )
+
+    I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
+    Q_prof[ix] = np.real(epsQ) * np.sqrt(np.pi)
+    U_prof[ix] = np.real(epsU) * np.sqrt(np.pi)
+    V_prof[ix] = np.real(epsV) * np.sqrt(np.pi)
+
+plt.figure(figsize=(10,7))
+
+for (K, Kp, Q), profile in sorted(V_terms.items()):
+    plt.plot(
+        xgrid,
+        profile,
+        label=f"K={K}, K'={Kp}, Q={Q}"
+    )
+    print(f"Max contribution to V from K={K}, K'={Kp}, Q={Q}: {np.max(np.abs(profile))}")
+plt.plot(
+    xgrid,
+    V_prof,
+    "k",
+    linewidth=3,
+    label="Total V"
+)
+
+plt.grid()
+plt.legend(fontsize=8)
+plt.xlabel("Reduced frequency x")
+plt.ylabel("Contribution to V")
+plt.tight_layout()
+plt.savefig("Stokes_allV_contributions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+plt.close()

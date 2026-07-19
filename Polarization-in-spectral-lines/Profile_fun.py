@@ -46,6 +46,8 @@ def zeeman_shift_parameter(B, gJ=1.0, Delta_nu_D=default_Delta_nu_D):
     nu_L = 1.3996e6 * B
     return gJ * nu_L / Delta_nu_D
 
+# ---------------------------------------------------------------------------------------------------------------------
+
 # What if define phi step-by-step instead of using wofz?
 # ---------------------------------------------------
 # Physical constants
@@ -207,7 +209,46 @@ def profile_1042(
 
     return num/(2*np.pi*den)
 
+# Too costly!
+def maxwell(u):
+    return np.exp(-u*u)/np.sqrt(np.pi)
 
+
+def Phi_generalized_convolved(x, K, Kp, Q, vH, a):
+
+    x = np.asarray(x)
+
+    Phi_conv = np.zeros_like(x, dtype=np.complex128)
+
+    for i, xx in enumerate(x):
+
+        def real_integrand(u):
+            return (
+                maxwell(u)
+                * np.real(
+                    Phi_generalized(xx-u, K, Kp, Q, vH, a)
+                )
+            )
+
+        def imag_integrand(u):
+            return (
+                maxwell(u)
+                * np.imag(
+                    Phi_generalized(xx-u, K, Kp, Q, vH, a)
+                )
+            )
+
+        re = quad(real_integrand, -8, 8,
+                  epsabs=1e-10, epsrel=1e-10)[0]
+
+        im = quad(imag_integrand, -8, 8,
+                  epsabs=1e-10, epsrel=1e-10)[0]
+
+        Phi_conv[i] = re + 1j*im
+
+    return Phi_conv
+
+# ---------------------------------------------------------------------------------------------------------------------
 
 def phi_complex(x, a):
     return wofz(x + 1j*a) / np.sqrt(np.pi)
@@ -288,12 +329,12 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                     "vH = ", vH
                 )
               '''  
-            #profile = 0.5 * (
-            #    phi_transition_complex(x, Mu, Ml, vH, a)
-            #    + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
-            #)
+            profile = 0.5 * (
+                phi_transition_complex(x, Mu, Ml, vH, a)
+                + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
+            )
             
-            #Phi += term*profile
+            Phi += term*profile
             '''
             # testing purposes
             if K == 2 and Kp == 1 and Q == 0:
@@ -306,6 +347,7 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                         f"Phi={Phi} "
                     )
             '''
+            '''
             profile = profile_1042(
                 x,
                 Mu,
@@ -316,7 +358,10 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                 1.3996e6
             )
             Phi += term * profile
+            '''
     return pref*Phi
+
+# ---------------------------------------------------------------------------------------------------------------------
 
 # Profile function based on Appendix A13 form LL04
 # Properties of Generalized Profiles
