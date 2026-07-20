@@ -16,7 +16,7 @@ from Radiation_fun import *
 from sympy.physics.wigner import wigner_3j
 
 # So we can get float values
-def W3(j1,j2,j3,m1,m2,m3):
+def W3(j1, j2, j3, m1, m2, m3):
     return float(
         wigner_3j(
             j1,j2,j3,
@@ -259,7 +259,7 @@ def phi_transition_complex(x, Mu, Ml, vH, a):
     return phi_complex(x - shift, a)
 
 # Main part, the generalized profile function Φ^QKK′​, as per Eq. (10.40) from LL04.
-def Phi_generalized(x, K, Kp, Q, vH, a):
+def Phi_generalized(x, K, Kp, Q, vH, a, return_pairs = False):
     """
     Eq. (10.40)
 
@@ -278,6 +278,10 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
     )
 
     Phi = np.zeros_like(np.asarray(x), dtype=np.complex128)
+
+    if return_pairs:
+        pair_profiles = np.empty((3,3), dtype=object)
+
     # Loop through q and qp
     for Mu in (-1,0,1):
         for Mup in (-1,0,1):
@@ -333,8 +337,9 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
                 phi_transition_complex(x, Mu, Ml, vH, a)
                 + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
             )
-            
             Phi += term*profile
+            if return_pairs:
+                pair_profiles[Mu+1, Mup+1] = term * profile
             '''
             # testing purposes
             if K == 2 and Kp == 1 and Q == 0:
@@ -359,6 +364,9 @@ def Phi_generalized(x, K, Kp, Q, vH, a):
             )
             Phi += term * profile
             '''
+    if return_pairs:
+        return pref*Phi, pair_profiles
+
     return pref*Phi
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -380,11 +388,11 @@ def psi_q(x, q, vH, a):
 def Phi_appendix(x, K, Kp, Q, vH, a):
     x = np.asarray(x, dtype=np.complex128)
 
-    phi_p1 = phi_q(x, +1, vH, a)
+    phi_p1 = phi_q(x, 1, vH, a)
     phi_0 = phi_q(x, 0, vH, a)
     phi_m1 = phi_q(x, -1, vH, a)
 
-    psi_p1 = psi_q(x, +1, vH, a)
+    psi_p1 = psi_q(x, 1, vH, a)
     psi_0 = psi_q(x, 0, vH, a)
     psi_m1 = psi_q(x, -1, vH, a)
 
@@ -398,22 +406,24 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
         return (phi_p1 - phi_m1) / np.sqrt(6.0)
 
     if K == 0 and Kp == 2 and Q == 0:
-        return (phi_p1 - 2.0 * phi_0 + phi_m1) / np.sqrt(3.0)
+        return (phi_p1 - 2.0 * phi_0 + phi_m1) / (3.0 *np.sqrt(2.0))
 
     if K == 1 and Kp == 0 and Q == 0:
-        return -(phi_p1 + phi_m1) / 2.0
+        return -(phi_p1 - phi_m1) / np.sqrt(6.0)
 
     if K == 1 and Kp == 1 and Q == 0:
-        return -0.25 * (phi_p1 + 1j * psi_p1 + 2.0 * phi_0 + phi_m1 - 1j * psi_m1)
+        #return -0.25 * (phi_p1 + 1j * psi_p1 + 2.0 * phi_0 + phi_m1 - 1j * psi_m1)
+        return -(phi_p1 + phi_m1) / 2.0
 
     if K == 1 and Kp == 2 and Q == 0:
         return -(phi_p1 - phi_m1) / (2.0 * np.sqrt(3.0))
 
     if K == 2 and Kp == 0 and Q == 0:
-        return (phi_p1 - 2.0 * phi_0 + phi_m1) / np.sqrt(3.0)
+        #return (phi_p1 - 2.0 * phi_0 + phi_m1) / np.sqrt(3.0)
+        return -(phi_p1 - 2.0 * phi_0 + phi_m1) / (3.0 *np.sqrt(2.0))
 
     if K == 2 and Kp == 1 and Q == 0:
-        return -(phi_p1 - phi_m1) / (2.0 * np.sqrt(3.0))
+        return (phi_p1 - phi_m1) / (2.0 * np.sqrt(3.0))
 
     if K == 2 and Kp == 2 and Q == 0:
         return (phi_p1 + 4.0 * phi_0 + phi_m1) / 6.0

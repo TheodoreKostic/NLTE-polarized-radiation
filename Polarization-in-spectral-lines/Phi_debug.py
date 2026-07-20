@@ -236,7 +236,7 @@ h = 6.626 * 10e-27
 #vH = mu_B * B / h / default_Delta_nu_D
 Jrad_0 = radiation_tensor(hR=0.073)
 #Hu = 1.0 # depends on B
-#vH = 0.2
+#vH = 5.0
 Hu = hanle_parameter_exact(5.69, 1.0, A_ul)
 vH = 1.3996e6 * B / default_Delta_nu_D
 
@@ -250,8 +250,8 @@ Q_prof = np.zeros_like(xgrid)
 U_prof = np.zeros_like(xgrid)
 V_prof = np.zeros_like(xgrid)
 
-theta_B = np.pi/2
-chi_B = 0.0
+theta_B = np.pi/2 # -
+chi_B = 0.0 # np.pi/4
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
@@ -336,6 +336,21 @@ for ix, x in enumerate(xgrid):
         U_prof[ix] = (np.real(epsU))
         V_prof[ix] = np.real(epsV)
 '''           
+Phi = {}
+
+for K in [0,2]:
+    for Kp in [0,1,2]:
+        for Q in [-2,-1,0,1,2]:
+
+            Phi[(K,Kp,Q)] = Phi_generalized(
+                xgrid,
+                K,
+                Kp,
+                Q,
+                vH,
+                a_voigt
+            )
+
 for ix, x in enumerate(xgrid):
     Jarr = Jrad_to_array(Jrad_0)
     J00 = Jrad_0[(0,0)]
@@ -348,13 +363,16 @@ for ix, x in enumerate(xgrid):
     epsU = 0.0+0j
     epsV = 0.0+0j
     # K=0 blocks
-    Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH, a=a_voigt)[0]
+    #Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH, a=a_voigt)[0]
+    Phi00 = Phi[(0,0,0)][ix]
     epsI += Phi00 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * J00
 
-    Phi01 = Phi_generalized(np.array([x]), K=0, Kp=1, Q=0, vH=vH, a=a_voigt)[0]
+    #Phi01 = Phi_generalized(np.array([x]), K=0, Kp=1, Q=0, vH=vH, a=a_voigt)[0]
+    Phi01 = Phi[(0,1,0)][ix]
     epsV += Phi01 * T(3,1,0, theta_obs, chi_obs, gamma_obs) * J00
 
-    Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a_voigt)[0]
+    #Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a_voigt)[0]
+    Phi02 = Phi[(0,2,0)][ix]
     epsI += Phi02 * T(0,2,0,theta_obs,chi_obs,gamma_obs) * J00
     epsQ += Phi02 * T(1,2,0,theta_obs,chi_obs,gamma_obs) * J00
     epsU += Phi02 * T(2,2,0,theta_obs,chi_obs,gamma_obs) * J00
@@ -368,10 +386,14 @@ for ix, x in enumerate(xgrid):
         #phase = 1
         #rhoQ = rho2[idx(Q)]
 
-        Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
+        Phi21 = Phi[(2,1,Q)][ix]
+        Phi22 = Phi[(2,2,Q)][ix]
+        Phi20 = Phi[(2,0,Q)][ix]
+
+        #Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * rhoQ
 
-        Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a_voigt)[0]
+        #Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a_voigt)[0]
     
         # ---------------------------------------
         # DEBUG ONLY AT ONE FREQUENCY
@@ -401,7 +423,7 @@ for ix, x in enumerate(xgrid):
             V21 += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
             print("V21 contribution for Q =", Q, "is", V21)
 
-        Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
+        #Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi22 * T(0,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsQ += phase * Phi22 * T(1,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi22 * T(2,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -427,7 +449,7 @@ ax[1,1].plot(xgrid,V_prof)
 ax[1,1].set_title("V")
 
 plt.tight_layout()
-plt.savefig("Stokes_try_Hu{}_gamma{}_theta{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs), vH), dpi = 300)
+plt.savefig("Stokes_try_Hu{}_gamma{}_thetaB{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), vH), dpi = 300)
 
 fig = plt.figure(figsize=(8,6))
 plt.plot(xgrid, Q_prof/I_prof, label="P_Q")
@@ -437,7 +459,7 @@ plt.xlabel("x")
 plt.ylabel("P")
 plt.title("P vs x for different Stokes parameters")
 plt.legend()
-plt.savefig("Fractional_polarization_Hu{}_gamma{}_theta{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs), vH), dpi = 300)
+plt.savefig("Fractional_polarization_Hu{}_gamma{}_thetaB{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), vH), dpi = 300)
 plt.close()
 
 emissivity_breakdown(
@@ -1230,7 +1252,7 @@ ax[1,1].plot(xgrid,V_prof)
 ax[1,1].set_title("V")
 
 plt.tight_layout()
-plt.savefig("Stokes_direct_Hu{}_gamma{}_theta{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_obs)), dpi = 300)
+plt.savefig("Stokes_direct_Hu{}_gamma{}_thetaB{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B)), dpi = 300)
 plt.close()
 
 Phi20_array = np.array([
@@ -1471,7 +1493,7 @@ plt.savefig("Generalized_profiles_vH{}.png".format(vH), dpi=300)
 plt.close()
 
 # 19. 07. 2026. 
-# Store every individual contribution to V
+# Store every individual contribution to V appendix
 V_terms = {}
 V10   = np.zeros_like(xgrid)
 V21m1 = np.zeros_like(xgrid)
@@ -1493,7 +1515,7 @@ for ix, x in enumerate(xgrid):
     # K = 0 contributions
     # ------------------------------------
 
-    Phi00 = Phi_generalized(
+    Phi00 = Phi_appendix(
         np.array([x]), 0,0,0,vH,a_voigt
     )[0]
 
@@ -1503,7 +1525,7 @@ for ix, x in enumerate(xgrid):
         * J00
     )
 
-    Phi01 = Phi_generalized(
+    Phi01 = Phi_appendix(
         np.array([x]),0,1,0,vH,a_voigt
     )[0]
 
@@ -1520,7 +1542,7 @@ for ix, x in enumerate(xgrid):
 
     V_terms[key][ix] = np.real(term10)
 
-    Phi02 = Phi_generalized(
+    Phi02 = Phi_appendix(
         np.array([x]),0,2,0,vH,a_voigt
     )[0]
 
@@ -1545,7 +1567,7 @@ for ix, x in enumerate(xgrid):
     # ------------------------------------
     # K = 2 contributions
     # ------------------------------------
-
+    epsV21 = 0.0 + 0j
     for Q in [-2,-1,0,1,2]:
 
         phase = (-1)**Q
@@ -1555,7 +1577,7 @@ for ix, x in enumerate(xgrid):
         # K=2 -> K'=0
         # -------------------------
 
-        Phi20 = Phi_generalized(
+        Phi20 = Phi_appendix(
             np.array([x]),2,0,Q,vH,a_voigt
         )[0]
 
@@ -1570,7 +1592,7 @@ for ix, x in enumerate(xgrid):
         # K=2 -> K'=1
         # -------------------------
 
-        Phi21 = Phi_generalized(
+        Phi21 = Phi_appendix(
             np.array([x]),2,1,Q,vH,a_voigt
         )[0]
 
@@ -1615,7 +1637,7 @@ for ix, x in enumerate(xgrid):
         epsQ += term21Q
         epsU += term21U
         epsV += term21V
-
+        epsV21 += term21V
         # Store each individual V contribution
 
         if Q == -1:
@@ -1638,7 +1660,7 @@ for ix, x in enumerate(xgrid):
         # K=2 -> K'=2
         # -------------------------
 
-        Phi22 = Phi_generalized(
+        Phi22 = Phi_appendix(
             np.array([x]),2,2,Q,vH,a_voigt
         )[0]
 
@@ -1666,16 +1688,13 @@ for ix, x in enumerate(xgrid):
     # ------------------------------------
     # Store Stokes profiles
     # ------------------------------------
-    check = (
-    V21m1[ix]
-    + V210[ix]
-    + V21p1[ix]
-    )
+    check = V21m1[ix] + V210[ix] + V21p1[ix]
 
     print(
-        "x", ix,
-        "check", check,
-        np.real(epsV)
+        f"x = {x:6.2f}",
+        f"stored = {check: .6e}",
+        f"epsV21 = {np.real(epsV21): .6e}",
+        f"difference = {check - np.real(epsV21): .3e}"
     )
 
     I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
@@ -1707,3 +1726,107 @@ plt.ylabel("Contribution to V")
 plt.tight_layout()
 plt.savefig("Stokes_allV_contributions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
 plt.close()
+
+
+plt.figure(figsize=(8,5))
+plt.plot(xgrid, V21m1, '.', label="Q=-1")
+plt.plot(xgrid, V21p1, label="Q=+1")
+plt.plot(xgrid, V21m1 + V21p1, "k--", linewidth=2, label="Sum")
+plt.xlabel("Reduced frequency x")
+plt.ylabel("Contribution to V")
+plt.legend()
+plt.savefig("Stokes_V21_Qm1_Qp1_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+plt.close()
+
+print(np.max(np.abs(V21m1 - V21p1)))
+print(np.max(np.abs(V21m1 + V21p1)))
+print(np.max(np.abs(V21m1 + V21p1 - V_prof)))
+
+fig, ax = plt.subplots(2,2,figsize=(12,10))
+fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+ax[0,0].plot(xgrid,I_prof)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Q_prof)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,U_prof)
+ax[1,0].set_title("U")
+
+ax[1,1].plot(xgrid,V_prof)
+ax[1,1].set_title("V")
+
+plt.tight_layout()
+plt.savefig("Stokes_B_Hu{}_gamma{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), np.degrees(chi_B), np.degrees(theta_obs), np.degrees(chi_obs)), dpi = 300)
+plt.close()
+
+for Q in [-1,0,1]:
+    PhiG, pairs = Phi_generalized(
+        xgrid,
+        K=2,
+        Kp=1,
+        Q=Q,
+        vH=vH,
+        a=a_voigt,
+        return_pairs=True
+    )
+
+    fig, axes = plt.subplots(3, 3, figsize=(12,10), sharex=True, sharey=True)
+
+    Mu_values = [-1,0,1]
+
+    for i, Mu in enumerate(Mu_values):
+        for j, Mup in enumerate(Mu_values):
+
+            prof = pairs[i,j]
+
+            if prof is not None:
+                axes[i,j].plot(
+                    xgrid,
+                    np.real(prof)
+                )
+
+            axes[i,j].set_title(
+                f"$M_u={Mu},\,M_u'={Mup}$",
+                fontsize=10
+            )
+
+            axes[i,j].grid()
+
+    plt.tight_layout()
+    plt.savefig("Mu_Mup_pairs_Q{}_contributions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Q, Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+    plt.close()
+
+    plt.figure(figsize=(9,6))
+    Mu_values = [-1,0,1]
+    for i, Mu in enumerate(Mu_values):
+        for j, Mup in enumerate(Mu_values):
+
+            prof = pairs[i,j]
+
+            if prof is None:
+                continue
+
+            if np.max(np.abs(prof)) < 1e-12:
+                continue
+
+            plt.plot(
+                xgrid,
+                np.real(prof),
+                label=f"({Mu},{Mup})"
+            )
+
+    plt.plot(
+        xgrid,
+        np.real(Phi),
+        "k",
+        linewidth=3,
+        label="Total"
+    )
+
+    plt.legend()
+    plt.grid()
+    plt.xlabel("Reduced frequency x")
+    plt.ylabel(r"$\Re\{\Phi\}$")
+    plt.savefig("Mu_Mup_pairs_Q{}_oneimg_contributions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Q, Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+    plt.close()
