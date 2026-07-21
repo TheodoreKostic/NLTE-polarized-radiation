@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -57,16 +57,26 @@ for K in [0,2]:
                 a_voigt
             )
 
+print("2,1,0 x =-1, =  ", np.max(np.abs(Phi[(2,1,0)])))
+
 # ----------------------------------------------------------
 # Plot all generalized profiles
 # ----------------------------------------------------------
 
-styles = {
-    -2: ("tab:purple", ":"),
-    -1: ("tab:red", "--"),
-     0: ("tab:green", "-"),
-     1: ("tab:orange", "-."),
-     2: ("tab:blue", (0, (5, 1)))
+q_colors = {
+    -2: "tab:purple",
+    -1: "tab:red",
+     0: "tab:green",
+     1: "tab:orange",
+     2: "tab:blue",
+}
+
+q_styles = {
+    -2: "-",
+    -1: "--",
+    0: "-.",
+    1: ":",
+    2: (0,(5,2)),
 }
 
 fig, axes = plt.subplots(
@@ -105,36 +115,40 @@ for row, (K,Kp,Qlist) in enumerate(pairs):
             return_pairs=True
         )
 
-        # unsplit profile
-        ax.plot(
-            xgrid,
-            np.real(phi_complex(xgrid,a_voigt)),
-            "k--",
-            alpha=0.35,
-            linewidth=1.0,
-            label="Voigt" if Q==Qlist[0] else None
-        )
+        color = q_colors[Q]
+        style = q_styles[Q]
 
-        # Zeeman components
+        # reference Voigt profile
+        if Q == Qlist[0]:
+            ax.plot(
+                xgrid,
+                np.real(phi_complex(xgrid, a_voigt)),
+                "k--",
+                alpha=0.3,
+                linewidth=1,
+                label="Voigt"
+            )
+
+        # individual Mu,Mu' contributions
         for Mu in (-1,0,1):
             for Mup in (-1,0,1):
 
-                profile = components[Mu+1, Mup+1]
-
                 ax.plot(
                     xgrid,
-                    np.real(profile),
-                    linewidth=1.2,
-                    label=rf"$M_u={Mu},\,M_u'={Mup}$"
+                    np.real(components[Mu+1, Mup+1]),
+                    color=color,
+                    linestyle=style,
+                    linewidth=0.8,
+                    alpha=0.6
                 )
 
         # total generalized profile
         ax.plot(
             xgrid,
             np.real(Phi),
-            "k",
-            linewidth=3,
-            label=r"$\Phi^{KK'}_Q$"
+            color=color,
+            linewidth=2.0,
+            label=rf"Total $Q={Q}$"
         )
 
     ax.set_title(rf"$K={K},\,K'={Kp}$")
@@ -168,35 +182,35 @@ for row, (K,Kp,Qlist) in enumerate(pairs):
             return_pairs=True
         )
 
+        color = q_colors[Q]
+
         for Mu in (-1,0,1):
             for Mup in (-1,0,1):
 
-                profile = components[Mu+1, Mup+1]
-
                 ax.plot(
                     xgrid,
-                    np.imag(profile),
-                    linewidth=1.2,
-                    label=rf"$M_u={Mu},\,M_u'={Mup}$"
+                    np.imag(components[Mu+1, Mup+1]),
+                    color=color,
+                    linestyle=style,
+                    linewidth=0.8,
+                    alpha=0.6
                 )
 
         ax.plot(
             xgrid,
             np.imag(Phi),
-            "k",
-            linewidth=3,
-            label=r"$\Phi^{KK'}_Q$"
+            color=color,
+            linewidth=2.0,
+            label=rf"Total $Q={Q}$"
         )
 
     ax.grid(alpha=0.3)
-
-    if row == 0:
-        ax.legend(
-            loc="center left",
-            bbox_to_anchor=(1.02,0.5),
-            fontsize=8,
-            frameon=True
-        )
+    ax.legend(
+    fontsize=5,
+    ncol=2,
+    loc="upper right",
+    framealpha=0.9
+)
 
 axes[-1,0].set_xlabel("Reduced frequency $x$")
 axes[-1,1].set_xlabel("Reduced frequency $x$")
@@ -204,7 +218,7 @@ axes[-1,1].set_xlabel("Reduced frequency $x$")
 fig.suptitle("Generalized profiles", fontsize=16)
 
 plt.savefig(
-    "Generalized_profiles_debug.png",
+    "Generalized_profiles_colored.png",
     dpi=300,
     bbox_inches="tight"
 )
@@ -293,3 +307,201 @@ for K in [0,2]:
             print(
                 f"Q={Q}: normalized shape difference = {diff:.3e}"
             )
+
+V21_profile = np.zeros_like(xgrid)
+V21_2_profile = np.zeros_like(xgrid)
+V21_0_profile = np.zeros_like(xgrid)
+V21_m2_profile = np.zeros_like(xgrid)
+V21_m1_profile = np.zeros_like(xgrid)
+for ix, x in enumerate(xgrid):
+    Jarr = Jrad_to_array(Jrad_0)
+    J00 = Jrad_0[(0,0)]
+    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+    #print("\nFrequency x = ", x)
+    #print("rho2 real:", np.real(rho2))
+    #print("rho2 imag:", np.imag(rho2))
+    epsI = 0.0+0j
+    epsQ = 0.0+0j
+    epsU = 0.0+0j
+    epsV = 0.0+0j
+    # K=0 blocks
+    #Phi00 = Phi_generalized(np.array([x]), K=0, Kp=0, Q=0, vH=vH, a=a_voigt)[0]
+    Phi00 = Phi[(0,0,0)][ix]
+    epsI += Phi00 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * J00
+
+    #Phi01 = Phi_generalized(np.array([x]), K=0, Kp=1, Q=0, vH=vH, a=a_voigt)[0]
+    Phi01 = Phi[(0,1,0)][ix]
+    epsV += Phi01 * T(3,1,0, theta_obs, chi_obs, gamma_obs) * J00
+    epsV01 = Phi01 * T(3,1,0, theta_obs, chi_obs, gamma_obs) * J00
+
+    #Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a_voigt)[0]
+    Phi02 = Phi[(0,2,0)][ix]
+    epsI += Phi02 * T(0,2,0,theta_obs,chi_obs,gamma_obs) * J00
+    epsQ += Phi02 * T(1,2,0,theta_obs,chi_obs,gamma_obs) * J00
+    epsU += Phi02 * T(2,2,0,theta_obs,chi_obs,gamma_obs) * J00
+
+    V21 = 0+0j
+    epsV21 = 0j
+    # K=2 blocks
+    for Q in [-2,-1,0,1,2]:
+        phase = (-1)**Q
+        rhoQ = np.conj(rho2[idx(-Q)])
+        #phase = 1
+        #rhoQ = rho2[idx(Q)]
+        if Q == 0 and abs(x + 1) < 1e-10:
+            print("Dictionary value =", Phi[(2,1,0)][ix])
+        Phi21 = Phi[(2,1,Q)][ix]
+        Phi22 = Phi[(2,2,Q)][ix]
+        Phi20 = Phi[(2,0,Q)][ix]
+
+        #Phi20 = Phi_generalized(np.array([x]), K=2, Kp=0, Q=Q, vH=vH, a=a_voigt)[0]
+        epsI += phase * Phi20 * T(0,0,0,theta_obs,chi_obs,gamma_obs) * rhoQ
+
+        #Phi21 = Phi_generalized(np.array([x]), K=2, Kp=1, Q=Q, vH=vH, a=a_voigt)[0]
+    
+        # ---------------------------------------
+        # DEBUG ONLY AT ONE FREQUENCY
+        # ---------------------------------------
+        if x == -2 or x == -1 or x == 0 or x == 1 or x == 2:
+            print(f"\nFrequency x={x}")
+            term = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            )
+            print(f"\nQ = {Q}")
+            print(f"RePhi21 = {np.real(Phi21)}")
+            print(f"ImPhi21 = {np.imag(Phi21)}")
+            print(f"ReT31    = {np.real(T(3,1,Q,theta_obs,chi_obs,gamma_obs))}")
+            print(f"ImT31    = {np.imag(T(3,1,Q,theta_obs,chi_obs,gamma_obs))}")
+            print(f"RerhoQ   = {np.real(rhoQ)}")
+            print(f"ImrhoQ   = {np.imag(rhoQ)}")
+            print(f"term   = {term}")
+            print(f"term.real   = {term.real}")
+            print(f"term.imag   = {term.imag}")
+        epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        epsV += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        epsV21 += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        if abs(x - 0.5) < 1e-10:
+            V21 += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+            print("V21 contribution for Q =", Q, "is", V21)
+
+        #Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
+        epsI += phase * Phi22 * T(0,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        epsQ += phase * Phi22 * T(1,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        epsU += phase * Phi22 * T(2,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+        if Q == 1:
+            V21_profile[ix] = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            ).real
+        if Q == 2:
+            V21_2_profile[ix] = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            ).real
+        if Q == 0:
+            V21_0_profile[ix] = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            ).real
+        if Q == -1:
+            V21_m1_profile[ix] = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            ).real
+        if Q == -2:
+            V21_m2_profile[ix] = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            ).real
+
+    epsV = epsV01 + epsV21
+    #print("x =", x)
+    #print("epsV01 =", epsV01)
+    #print("epsV21 =", epsV21)
+    #print("epsV   =", epsV)
+
+    I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
+    Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
+    U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
+    V_prof[ix] = (np.imag(epsV)*np.sqrt(np.pi))
+
+fig, ax = plt.subplots(2,2,figsize=(12,10))
+fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+ax[0,0].plot(xgrid,I_prof)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Q_prof)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,U_prof)
+ax[1,0].set_title("U")
+
+ax[1,1].plot(xgrid,(V21_m2_profile))
+#ax[1,1].set_ylim(-0.00000002, 0.00000002)
+ax[1,1].set_title("V")
+
+plt.tight_layout()
+plt.savefig("VStokes_try_Hu{}_gamma{}_thetaB{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), vH), dpi = 300)
+plt.close()
+
+
+Phi_test, components_test = Phi_generalized(
+    xgrid,
+    K=2,
+    Kp=1,
+    Q=0,
+    vH=vH,
+    a=a_voigt,
+    return_pairs=True,
+)
+
+for Mu in (-1,0,1):
+    for Mup in (-1,0,1):
+
+        print(
+            "Mu", Mu,
+            "Mup", Mup,
+            "Abs max", np.max(np.abs(np.imag(components_test[Mu+1,Mup+1])))
+        )
+
+        plt.plot(
+            xgrid,
+            np.imag(components_test[Mu+1,Mup+1]),
+            label=f"{Mu},{Mup}"
+        )
+plt.legend()
+plt.savefig("VStokes_abs_Mu_Mup.png", dpi = 300)
+plt.close()
+
+Jarr = Jrad_to_array(Jrad_0)
+J00 = Jrad_0[(0,0)]
+Hfull = apply_hanle(Jarr, Hu, theta_B, chi_B)
+
+np.set_printoptions(precision=6, suppress=True)
+
+print("Hfull =")
+print(Hfull)
+
+
+D = wigner_D2(0.0, np.pi/2, 0.0)
+
+np.set_printoptions(precision=6, suppress=True)
+print(D)
+
+print(np.real(D))
+print(np.imag(D))

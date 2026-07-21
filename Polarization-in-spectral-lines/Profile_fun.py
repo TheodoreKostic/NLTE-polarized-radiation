@@ -312,31 +312,39 @@ def Phi_generalized(x, K, Kp, Q, vH, a, return_pairs = False):
                     q, -qp, -Q
                 )
             )
-            '''
-            if K == 2 and Kp == 2 and Q == 0:
-                coeff = (
-            (-1)**(1 + Ju - Mu + qp)
-            * W3(Ju,Jl,1,-Mu,Ml,q)
-            * W3(Ju,Jl,1,-Mup,Ml,qp)
-            * W3(Ju,Ju,K,Mu,-Mup,-Q)
-            * W3(1,1,Kp,q,-qp,-Q)
-                )
+            
+            if K == 2 and Kp == 1 and Q == 0:
+                if Mu == 1 and Mup == -1:
+                    q = Mu
+                    qp = Mup
+                    coeff = (
+                (-1)**(1 + Ju - Mu + qp)
+                * W3(Ju,Jl,1,-Mu,Ml,q)
+                * W3(Ju,Jl,1,-Mup,Ml,qp)
+                * W3(Ju,Ju,K,Mu,-Mup,-Q)
+                * W3(1,1,Kp,q,-qp,-Q)
+                    )
 
-               
-                print(
-                    "K = ", K,
-                    "Kp = ", Kp,
-                    "Q = ", Q,
-                    "Mu =", Mu,
-                    "Mup =", Mup,
-                    "coeff =", coeff,
-                    "vH = ", vH
-                )
-              '''  
+                    print("W1 =", W3(Ju,Jl,1,-Mu,Ml,q))
+                    print("W2 =", W3(Ju,Jl,1,-Mup,Ml,qp))
+                    print("W3 =", W3(Ju,Ju,K,Mu,-Mup,-Q))
+                    print("W4 =", W3(1,1,Kp,q,-qp,-Q))
+
+                    print(
+                        "K = ", K,
+                        "Kp = ", Kp,
+                        "Q = ", Q,
+                        "Mu =", Mu,
+                        "Mup =", Mup,
+                        "coeff =", coeff,
+                        "vH = ", vH
+                    )
+              
             profile = 0.5 * (
                 phi_transition_complex(x, Mu, Ml, vH, a)
                 + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
             )
+          
             Phi += term*profile
             if return_pairs:
                 pair_profiles[Mu+1, Mup+1] = term * profile
