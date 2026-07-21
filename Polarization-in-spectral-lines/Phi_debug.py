@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -1783,7 +1783,16 @@ for Q in [-1,0,1]:
             if prof is not None:
                 axes[i,j].plot(
                     xgrid,
-                    np.real(prof)
+                    np.real(prof),
+                    color = "blue",
+                    label=f"Re({Mu},{Mup})"
+                )
+                axes[i, j].plot(
+                    xgrid,
+                    np.imag(prof),
+                    color = "red",
+                    linestyle = "--",
+                    label=f"Im({Mu},{Mup})",
                 )
 
             axes[i,j].set_title(
@@ -1792,6 +1801,7 @@ for Q in [-1,0,1]:
             )
 
             axes[i,j].grid()
+            axes[i,j].legend()
 
     plt.tight_layout()
     plt.savefig("Mu_Mup_pairs_Q{}_contributions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Q, Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
@@ -1813,20 +1823,22 @@ for Q in [-1,0,1]:
             plt.plot(
                 xgrid,
                 np.real(prof),
-                label=f"({Mu},{Mup})"
+                label=f"Re({Mu},{Mup})"
             )
+            plt.plot(xgrid, np.imag(prof), "--", label=f"Im({Mu},{Mup})")
 
     plt.plot(
         xgrid,
-        np.real(Phi),
+        np.real(PhiG),
         "k",
-        linewidth=3,
-        label="Total"
+        linewidth=1.5,
+        label="Total Re"
     )
+    plt.plot(xgrid, np.imag(PhiG), "k--", linewidth=1.5, label="Total Im")
 
     plt.legend()
     plt.grid()
     plt.xlabel("Reduced frequency x")
-    plt.ylabel(r"$\Re\{\Phi\}$")
+    plt.ylabel(r"$\Re\{\Phi\},\,\Im\{\Phi\}$")
     plt.savefig("Mu_Mup_pairs_Q{}_oneimg_contributions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Q, Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
     plt.close()
