@@ -180,6 +180,19 @@ def apply_hanle(Jarr, Hu, theta_B, chi_B):
 
     return Hfull @ Jarr
 
+def hanle_operator_alt(Hu, theta_B, chi_B):
+
+    Qs = np.array([-2,-1,0,1,2])
+
+    Hdiag = np.diag(
+        [1/(1+1j*Q*Hu) for Q in Qs]
+    )
+
+    D = wigner_D2(chi_B, theta_B, 0)
+
+    return D.conj().T @ Hdiag @ D
+
+
 # Compcat Hanle effect now
 def hanle_polarization_corrected(
         Hu,

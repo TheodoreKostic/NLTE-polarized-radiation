@@ -258,7 +258,7 @@ def phi_transition_complex(x, Mu, Ml, vH, a):
     shift = (Mu - Ml) * vH
     return phi_complex(x - shift, a)
 
-# Main part, the generalized profile function Φ^QKK′​, as per Eq. (10.40) from LL04.
+# Main part, the generalized profile function Φ_Q^{KK′}​, as per Eq. (10.40) from LL04.
 def Phi_generalized(x, K, Kp, Q, vH, a, return_pairs = False):
     """
     Eq. (10.40)
@@ -312,7 +312,7 @@ def Phi_generalized(x, K, Kp, Q, vH, a, return_pairs = False):
                     q, -qp, -Q
                 )
             )
-            
+            '''
             if K == 2 and Kp == 1 and Q == 0:
                 if Mu == 1 and Mup == -1:
                     q = Mu
@@ -339,7 +339,7 @@ def Phi_generalized(x, K, Kp, Q, vH, a, return_pairs = False):
                         "coeff =", coeff,
                         "vH = ", vH
                     )
-              
+            '''
             profile = 0.5 * (
                 phi_transition_complex(x, Mu, Ml, vH, a)
                 + np.conj(phi_transition_complex(x, Mup, Ml, vH, a))
@@ -447,6 +447,9 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
 
     if K == 2 and Kp == 2 and Q == 2:
         return 0.5 * (phi_p1 + 1j * psi_p1 + phi_m1 - 1j * psi_m1)
+
+    if K == 2 and Kp == 1 and Q == 1:
+        return 0.25 * (phi_p1 + 1j * psi_p1 - 2.0j * psi_0 - phi_m1 + 1j * psi_m1)
 
     return np.zeros_like(x, dtype=np.complex128)
 
