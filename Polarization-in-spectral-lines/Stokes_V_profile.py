@@ -36,15 +36,15 @@ Q_prof = np.zeros_like(xgrid)
 U_prof = np.zeros_like(xgrid)
 V_prof = np.zeros_like(xgrid)
 
-theta_B = np.pi/2 # -
-chi_B = 0.0 # np.pi/4
+theta_B = np.pi/2 # np.pi/4
+chi_B = 0.0 # -np.pi/2
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
 
 Phi = {}
 
-for K in [0,2]:
+for K in [0,1,2]:
     for Kp in [0,1,2]:
         for Q in [-2,-1,0,1,2]:
 
@@ -429,7 +429,7 @@ for ix, x in enumerate(xgrid):
                 * rhoQ
             ).real
 
-    epsV = epsV01 + epsV21
+    #epsV = epsV01 + epsV21
     #print("x =", x)
     #print("epsV01 =", epsV01)
     #print("epsV21 =", epsV21)
@@ -438,7 +438,7 @@ for ix, x in enumerate(xgrid):
     I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
     Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
     U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
-    V_prof[ix] = (np.imag(epsV)*np.sqrt(np.pi))
+    V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
 
 fig, ax = plt.subplots(2,2,figsize=(12,10))
 fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
@@ -451,7 +451,7 @@ ax[0,1].set_title("Q")
 ax[1,0].plot(xgrid,U_prof)
 ax[1,0].set_title("U")
 
-ax[1,1].plot(xgrid,(V21_m2_profile))
+ax[1,1].plot(xgrid,V_prof)
 #ax[1,1].set_ylim(-0.00000002, 0.00000002)
 ax[1,1].set_title("V")
 
@@ -490,18 +490,367 @@ plt.close()
 
 Jarr = Jrad_to_array(Jrad_0)
 J00 = Jrad_0[(0,0)]
-Hfull = apply_hanle(Jarr, Hu, theta_B, chi_B)
+Hfull = apply_hanle(Jarr, Hu, theta_B, 0.0)
 
 np.set_printoptions(precision=6, suppress=True)
 
-print("Hfull =")
+print("Hfull for chi_B = 0, =")
 print(Hfull)
+
+Hfull_pi2 = apply_hanle(Jarr, Hu, theta_B, -np.pi/2)
+print("Hfull for chi_B = -np.pi/2, =")
+print(Hfull_pi2)
 
 
 D = wigner_D2(0.0, np.pi/2, 0.0)
 
 np.set_printoptions(precision=6, suppress=True)
-print(D)
+print("D = ", D)
 
-print(np.real(D))
-print(np.imag(D))
+print("Re(D) = ", np.real(D))
+print("Im(D) = ", np.imag(D))
+
+print(hanle_operator_alt(Hu, theta_B, chi_B)[:,2])
+
+
+print("----------------------------------------")
+print("theta_B = 90 deg, chi_B = 0.0 deg")
+rho = apply_hanle(Jarr, Hu, np.pi/2, 0.0)
+for Q in [-1,0,1]:
+    rhoQ = rho[idx(Q)]
+    contrib = (
+        (-1.0)**Q
+        * np.conj(rho[idx(-Q)])
+        #rhoQ
+        * Phi[(2,1,Q)]
+        * T(3, 1, Q, theta_obs, chi_obs, gamma_obs)
+    )
+
+    print("Q = ", Q, 
+          np.max(np.abs(contrib)),
+          np.max(np.abs(contrib.imag)))
+
+print("theta_B = 45 deg, chi_B = -90 deg")
+rho = apply_hanle(Jarr, Hu, np.pi/4, -np.pi/2)
+for Q in [-1,0,1]:
+    rhoQ = rho[idx(Q)]
+    contrib = (
+        (-1.0)**Q
+        * np.conj(rho[idx(-Q)])
+        #rhoQ
+        * Phi[(2,1,Q)]
+        * T(3, 1, Q, theta_obs, chi_obs, gamma_obs)
+    )
+
+    print("Q = ", Q,
+          np.max(np.abs(contrib)),
+          np.max(np.abs(contrib.imag)))
+
+print(T(3, 1, -1, theta_obs, chi_obs, gamma_obs))
+print(T(3, 1, 1, theta_obs, chi_obs, gamma_obs))
+print(T(3, 1, 0, theta_obs, chi_obs, gamma_obs))
+
+V_terms = {}
+V10   = np.zeros_like(xgrid)
+V21m1 = np.zeros_like(xgrid)
+V210  = np.zeros_like(xgrid)
+V21p1 = np.zeros_like(xgrid)
+for ix, x in enumerate(xgrid):
+
+    Jarr = Jrad_to_array(Jrad_0)
+    J00  = Jrad_0[(0,0)]
+
+    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+
+    epsI = 0.0 + 0j
+    epsQ = 0.0 + 0j
+    epsU = 0.0 + 0j
+    epsV = 0.0 + 0j
+
+    # ------------------------------------
+    # K = 0 contributions
+    # ------------------------------------
+
+    Phi00 = Phi_appendix(
+        np.array([x]), 0,0,0,vH,a_voigt
+    )[0]
+
+    epsI += (
+        Phi00
+        * T(0,0,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    Phi01 = Phi_appendix(
+        np.array([x]),0,1,0,vH,a_voigt
+    )[0]
+
+    term10 = (
+        Phi01
+        * T(3,1,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    key = (0, 1, 0)
+
+    if key not in V_terms:
+        V_terms[key] = np.zeros_like(xgrid)
+
+    V_terms[key][ix] = np.real(term10)
+
+    Phi02 = Phi_appendix(
+        np.array([x]),0,2,0,vH,a_voigt
+    )[0]
+
+    epsI += (
+        Phi02
+        * T(0,2,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    epsQ += (
+        Phi02
+        * T(1,2,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    epsU += (
+        Phi02
+        * T(2,2,0,theta_obs,chi_obs,gamma_obs)
+        * J00
+    )
+
+    # ------------------------------------
+    # K = 2 contributions
+    # ------------------------------------
+    epsV21 = 0.0 + 0j
+    for Q in [-2,-1,0,1,2]:
+
+        phase = (-1)**Q
+        rhoQ  = np.conj(rho2[idx(-Q)])
+
+        # -------------------------
+        # K=2 -> K'=0
+        # -------------------------
+
+        Phi20 = Phi_appendix(
+            np.array([x]),2,0,Q,vH,a_voigt
+        )[0]
+
+        epsI += (
+            phase
+            * Phi20
+            * T(0,0,0,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        # -------------------------
+        # K=2 -> K'=1
+        # -------------------------
+
+        Phi21 = Phi_appendix(
+            np.array([x]),2,1,Q,vH,a_voigt
+        )[0]
+
+        term21I = (
+            phase
+            * Phi21
+            * T(0,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        term21Q = (
+            phase
+            * Phi21
+            * T(1,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        term21U = (
+            phase
+            * Phi21
+            * T(2,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        term21V = (
+            phase
+            * Phi21
+            * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+        if abs(term21V) > 0:
+            print(
+                "Q", Q,
+                "term21V", term21V,
+                np.max(np.abs(term21V)),
+                "term21V real max", np.max(np.abs(np.real(term21V))),
+                np.max(np.abs(np.real(term21V))),
+                "term21V imag max",
+                np.max(np.abs(np.imag(term21V)))
+            )
+        epsI += term21I
+        epsQ += term21Q
+        epsU += term21U
+        epsV += term21V
+        epsV21 += term21V
+        # Store each individual V contribution
+
+        if Q == -1:
+            V21m1[ix] = np.real(term21V)
+
+        elif Q == 0:
+            V210[ix] = np.real(term21V)
+
+        elif Q == 1:
+            V21p1[ix] = np.real(term21V)
+
+        key = (2, 1, Q)
+
+        if key not in V_terms:
+            V_terms[key] = np.zeros_like(xgrid)
+
+        V_terms[key][ix] = np.real(term21V)
+
+        # -------------------------
+        # K=2 -> K'=2
+        # -------------------------
+
+        Phi22 = Phi_appendix(
+            np.array([x]),2,2,Q,vH,a_voigt
+        )[0]
+
+        epsI += (
+            phase
+            * Phi22
+            * T(0,2,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        epsQ += (
+            phase
+            * Phi22
+            * T(1,2,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+        epsU += (
+            phase
+            * Phi22
+            * T(2,2,Q,theta_obs,chi_obs,gamma_obs)
+            * rhoQ
+        )
+
+    # ------------------------------------
+    # Store Stokes profiles
+    # ------------------------------------
+    check = V21m1[ix] + V210[ix] + V21p1[ix]
+
+    print(
+        f"x = {x:6.2f}",
+        f"stored = {check: .6e}",
+        f"epsV21 = {np.real(epsV21): .6e}",
+        f"difference = {check - np.real(epsV21): .3e}"
+    )
+
+    I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
+    Q_prof[ix] = np.real(epsQ) * np.sqrt(np.pi)
+    U_prof[ix] = np.real(epsU) * np.sqrt(np.pi)
+    V_prof[ix] = np.real(epsV) * np.sqrt(np.pi)
+fig, ax = plt.subplots(2,2,figsize=(12,10))
+fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+ax[0,0].plot(xgrid,I_prof)
+ax[0,0].set_title("I")
+
+ax[0,1].plot(xgrid,Q_prof)
+ax[0,1].set_title("Q")
+
+ax[1,0].plot(xgrid,U_prof)
+ax[1,0].set_title("U")
+
+ax[1,1].plot(xgrid,V_prof)
+ax[1,1].set_title("V")
+
+plt.tight_layout()
+plt.savefig("Stokes_B_Hu{}_gamma{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), np.degrees(chi_B), np.degrees(theta_obs), np.degrees(chi_obs)), dpi = 300)
+plt.close()
+
+print(np.max(np.abs(np.imag(Phi[(2,1,-1)]))))
+print(np.max(np.abs(np.real(Phi[(2,1,-1)]))))
+
+Phi21 = Phi_generalized(
+    xgrid,
+    K=2,
+    Kp=1,
+    Q=1,
+    vH=vH,
+    a=a_voigt
+)
+phi_plus  = np.imag(phi_transition_complex(xgrid, 1, 0, vH, a_voigt))
+phi_minus = np.imag(phi_transition_complex(xgrid,-1, 0, vH, a_voigt))
+plt.figure()
+#plt.plot(xgrid, phi_plus, label="phi_plus")
+#plt.plot(xgrid, phi_minus, label="phi_minus")
+plt.plot(xgrid, phi_plus-phi_minus, label="phi_plus-phi_minus")
+plt.plot(xgrid, np.imag(Phi21), label="Phi_211")
+plt.legend()
+plt.savefig("Imag_diff.png")
+plt.close()
+
+
+Phi_gen_211 = Phi_generalized(
+    xgrid,
+    K=2,
+    Kp=1,
+    Q=1,
+    vH=vH,
+    a=a_voigt
+)
+
+Phi_gen_21m1 = Phi_generalized(
+    xgrid,
+    K=2,
+    Kp=1,
+    Q=-1,
+    vH=vH,
+    a=a_voigt
+)
+
+Phi_appendix_211 = Phi_appendix(xgrid, K = 2, Kp = 1, Q = 1, vH = vH, a = a_voigt)
+Phi_appendix_21m1 = Phi_appendix(xgrid, K = 2, Kp = 1, Q = -1, vH = vH, a = a_voigt)
+
+plt.figure(figsize=(8,6))
+plt.plot(xgrid, np.real(Phi_appendix_211), color = "blue", linestyle = "--", label = r"$\Phi_1^{21'}(app)$")
+plt.plot(xgrid, np.real(Phi_appendix_21m1), color = "navy", linestyle = "--", label = r"$\Phi_{-1}^{21'}(app)$")
+plt.plot(xgrid, np.real(Phi_gen_211), color = "yellow", linestyle = ":", label = r"$\Phi_1^{21'}(gen)$")
+plt.plot(xgrid, np.real(Phi_gen_21m1), color = "orange", linestyle = ":", label = r"$\Phi_{-1}^{21'}(gen)$")
+plt.ylabel(r"$\mathrm{Re}\Phi_{\pm1}^{21'}$")
+plt.xlabel("Reduced frequency x")
+plt.legend()
+plt.savefig("Gen_vs_appendix_Re.png")
+plt.close()
+
+plt.figure(figsize=(8,6))
+plt.plot(xgrid, np.imag(Phi_appendix_211), color = "blue", linestyle = "--", label = r"$\Phi_1^{21'}(app)$")
+plt.plot(xgrid, np.imag(Phi_appendix_21m1), color = "navy", linestyle = "--", label = r"$\Phi_{-1}^{21'}(app)$")
+plt.plot(xgrid, np.imag(Phi_gen_211), color = "yellow", linestyle = ":", label = r"$\Phi_1^{21'}(gen)$")
+plt.plot(xgrid, np.imag(Phi_gen_21m1), color = "orange", linestyle = ":", label = r"$\Phi_{-1}^{21'}(gen)$")
+plt.ylabel(r"$\mathrm{Im}\Phi_{\pm1}^{21'}$")
+plt.xlabel("Reduced frequency x")
+plt.legend()
+plt.savefig("Gen_vs_appendix_Im.png")
+plt.close()
+
+print("Abs max, app im Phi_1^21'",np.abs(np.max(np.imag(Phi_appendix_211))))
+print("Abs max, app im Phi_-1^21'",np.abs(np.max(np.imag(Phi_appendix_21m1))))
+print("Abs max, gen im Phi_1^21'", np.abs(np.max(np.imag(Phi_gen_211))))
+print("Abs max, gen im Phi_-1^21'", np.abs(np.max(np.imag(Phi_gen_21m1))))
+
+print("Abs max, app re Phi_1^21'",np.abs(np.max(np.real(Phi_appendix_211))))
+print("Abs max, app re Phi_-1^21'",np.abs(np.max(np.real(Phi_appendix_21m1))))
+print("Abs max, gen re Phi_1^21'", np.abs(np.max(np.real(Phi_gen_211))))
+print("Abs max, gen re Phi_-1^21'", np.abs(np.max(np.real(Phi_gen_21m1))))
+
+# Pogledati jednacine (3.38), (5.37), (5.45), (5.52), (6.59a), (9.6), (9.19)
+# Gamma = A_ul/4*pi
+# Raspisati sve T i Phi postupno za svaku kombinaciju K, K' i Q

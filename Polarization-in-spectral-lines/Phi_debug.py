@@ -250,8 +250,8 @@ Q_prof = np.zeros_like(xgrid)
 U_prof = np.zeros_like(xgrid)
 V_prof = np.zeros_like(xgrid)
 
-theta_B = np.pi/2 # -
-chi_B = 0.0 # np.pi/4
+theta_B = np.pi/2 # np.pi/4
+chi_B = 0.0 # -np.pi/2
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
