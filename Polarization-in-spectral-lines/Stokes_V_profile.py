@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -41,6 +41,167 @@ chi_B = 0.0 # -np.pi/2
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
+
+# ---------------------------------------------------------
+# Frame toggle for Eq. (13.20) contraction
+# ---------------------------------------------------------
+# False: current vertical-frame path (full Hanle operator)
+# True : LL04-style magnetic-frame contraction (single frame)
+USE_LL04_MAG_FRAME_BRANCH = True
+
+# Q/U reference handling when using magnetic-frame branch:
+# "transport_gamma"            -> transport +Q axis and use transported gamma directly
+# "fixed_gamma_rotate_qu_back" -> keep original gamma in contraction, rotate Q/U back after
+Q_U_REFERENCE_MODE = "fixed_gamma_rotate_qu_back"
+
+
+def _los_vec(theta, chi):
+    return np.array([
+        np.sin(theta) * np.cos(chi),
+        np.sin(theta) * np.sin(chi),
+        np.cos(theta)
+    ], dtype=float)
+
+
+def _angles_from_vec(v):
+    vv = v / np.linalg.norm(v)
+    theta = np.arccos(np.clip(vv[2], -1.0, 1.0))
+    chi = np.arctan2(vv[1], vv[0])
+    return theta, chi
+
+
+def _basis_from_angles(theta, chi):
+    # Local spherical basis for propagation direction (theta, chi).
+    e_theta = np.array([
+        np.cos(theta) * np.cos(chi),
+        np.cos(theta) * np.sin(chi),
+        -np.sin(theta)
+    ], dtype=float)
+    e_chi = np.array([
+        -np.sin(chi),
+        np.cos(chi),
+        0.0
+    ], dtype=float)
+    return e_theta, e_chi
+
+
+def _rotate_vert_to_mag(v, theta_B, chi_B):
+    # Inverse of Rz(chi_B) @ Ry(theta_B): Ry(-theta_B) @ Rz(-chi_B)
+    cz = np.cos(-chi_B)
+    sz = np.sin(-chi_B)
+    rz = np.array([
+        [cz, -sz, 0.0],
+        [sz, cz, 0.0],
+        [0.0, 0.0, 1.0]
+    ])
+
+    cy = np.cos(-theta_B)
+    sy = np.sin(-theta_B)
+    ry = np.array([
+        [cy, 0.0, sy],
+        [0.0, 1.0, 0.0],
+        [-sy, 0.0, cy]
+    ])
+
+    return ry @ (rz @ v)
+
+
+def _rotate_qu(q, u, psi):
+    c2 = np.cos(2.0 * psi)
+    s2 = np.sin(2.0 * psi)
+    q_new = q * c2 + u * s2
+    u_new = -q * s2 + u * c2
+    return q_new, u_new
+
+
+def plot_fractional_polarization(x, I, Q, U, V, title, save_path):
+    safe_I = np.where(np.abs(I) > 1e-300, I, np.nan)
+    pQ = Q / safe_I
+    pU = U / safe_I
+    pV = V / safe_I
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(x, pQ, color="tab:blue", linewidth=2.0, label="pQ = Q/I")
+    ax.plot(x, pU, color="tab:orange", linewidth=2.0, label="pU = U/I")
+    ax.plot(x, pV, color="tab:green", linewidth=2.0, label="pV = V/I")
+
+    intI = np.trapz(I, x)
+    if np.abs(intI) > 1e-300:
+        pQ_tilde = np.trapz(Q, x) / intI
+        pU_tilde = np.trapz(U, x) / intI
+        pV_tilde = np.trapz(V, x) / intI
+
+        ax.axhline(pQ_tilde, color="tab:blue", linestyle="--", alpha=0.8, label="~pQ")
+        ax.axhline(pU_tilde, color="tab:orange", linestyle="--", alpha=0.8, label="~pU")
+        ax.axhline(pV_tilde, color="tab:green", linestyle="--", alpha=0.8, label="~pV")
+
+    ax.set_xlabel("Reduced frequency x")
+    ax.set_ylabel("Fractional polarization")
+    ax.set_title(title)
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=250)
+    plt.close(fig)
+
+
+Jarr_base = Jrad_to_array(Jrad_0)
+J00_base = Jrad_0[(0,0)]
+qu_back_rotation = 0.0
+
+if USE_LL04_MAG_FRAME_BRANCH:
+    theta_obs_vert = theta_obs
+    chi_obs_vert = chi_obs
+    gamma_obs_vert = gamma_obs
+
+    # Build the original +Q reference direction in the vertical frame,
+    # then transport it into the magnetic frame to preserve Q/U signs.
+    e_th_v, e_ch_v = _basis_from_angles(theta_obs_vert, chi_obs_vert)
+    qref_vert = (
+        np.cos(gamma_obs_vert) * e_th_v
+        + np.sin(gamma_obs_vert) * e_ch_v
+    )
+
+    los_vert = _los_vec(theta_obs, chi_obs)
+    los_mag = _rotate_vert_to_mag(los_vert, theta_B, chi_B)
+    qref_mag = _rotate_vert_to_mag(qref_vert, theta_B, chi_B)
+
+    theta_obs, chi_obs = _angles_from_vec(los_mag)
+
+    # Recompute gamma in magnetic frame from transported +Q reference.
+    e_th_m, e_ch_m = _basis_from_angles(theta_obs, chi_obs)
+    qref_mag = qref_mag - np.dot(qref_mag, los_mag) * los_mag
+    qref_mag = qref_mag / np.linalg.norm(qref_mag)
+    gamma_transport = np.arctan2(
+        np.dot(qref_mag, e_ch_m),
+        np.dot(qref_mag, e_th_m)
+    )
+
+    if Q_U_REFERENCE_MODE == "transport_gamma":
+        gamma_obs = gamma_transport
+        qu_back_rotation = 0.0
+    elif Q_U_REFERENCE_MODE == "fixed_gamma_rotate_qu_back":
+        gamma_obs = gamma_obs_vert
+        qu_back_rotation = gamma_transport - gamma_obs_vert
+    else:
+        raise ValueError("Unknown Q_U_REFERENCE_MODE: {}".format(Q_U_REFERENCE_MODE))
+
+    Dmag = wigner_D2(chi_B, theta_B, 0.0)
+    Jmag = Dmag.conj().T @ Jarr_base
+
+    rho2_base = np.zeros(5, dtype=complex)
+    for Q in [-2, -1, 0, 1, 2]:
+        rho2_base[idx(Q)] = Jmag[idx(Q)] / (1.0 + 1j * Q * Hu)
+
+    print("Frame branch: magnetic-frame Eq.13.20")
+    print("theta_obs (mag frame) [deg] =", np.degrees(theta_obs))
+    print("chi_obs   (mag frame) [deg] =", np.degrees(chi_obs))
+    print("Q/U reference mode =", Q_U_REFERENCE_MODE)
+    print("gamma_obs (mag frame) [deg] =", np.degrees(gamma_obs))
+else:
+    rho2_base = apply_hanle(Jarr_base, Hu, theta_B, chi_B)
+    qu_back_rotation = 0.0
+    print("Frame branch: vertical-frame full Hanle operator")
 
 Phi = {}
 
@@ -308,15 +469,78 @@ for K in [0,2]:
                 f"Q={Q}: normalized shape difference = {diff:.3e}"
             )
 
+# ---------------------------------------------------------
+# Minimal diagnostics for Fig. 13.6 symmetry sensitivity
+# ---------------------------------------------------------
+
+RUN_DIAG = True
+OLD_DEBUG = False
+DIAG_X_POINTS = np.array([-2.0, -1.0, 0.0, 1.0, 2.0])
+
+
+def old_debug_print(*args, **kwargs):
+    if OLD_DEBUG:
+        print(*args, **kwargs)
+
+
+def complex_phase_deg(z):
+    if np.abs(z) < 1e-300:
+        return np.nan
+    return np.degrees(np.angle(z))
+
+
+def diag_is_sample_x(x):
+    return np.any(np.isclose(x, DIAG_X_POINTS, atol=1e-12))
+
+
+def diag_print_profile_family_mismatch():
+    # Checklist #3: strict profile-family isolation
+    gen_p1 = Phi_generalized(xgrid, 2, 1, 1, vH, a_voigt)
+    gen_m1 = Phi_generalized(xgrid, 2, 1, -1, vH, a_voigt)
+
+    app_p1 = Phi_appendix(xgrid, 2, 1, 1, vH, a_voigt)
+    app_m1 = Phi_appendix(xgrid, 2, 1, -1, vH, a_voigt)
+
+    print("\n[DIAG #3] Profile family mismatch (K=2, Kp=1)")
+    print("max |Re(gen_p1 - app_p1)| =", np.max(np.abs(np.real(gen_p1 - app_p1))))
+    print("max |Im(gen_p1 - app_p1)| =", np.max(np.abs(np.imag(gen_p1 - app_p1))))
+    print("max |Re(gen_m1 - app_m1)| =", np.max(np.abs(np.real(gen_m1 - app_m1))))
+    print("max |Im(gen_m1 - app_m1)| =", np.max(np.abs(np.imag(gen_m1 - app_m1))))
+
+
+def diag_v21_variant_at_ix(ix, rho2, use_conj_minusQ=True, flip_phase=False):
+    # Checklist #5: micro-perturbation sensitivity
+    v = 0.0 + 0.0j
+
+    for Q in [-1, 0, 1]:
+        phase = (-1)**Q
+        if flip_phase:
+            phase *= -1.0
+
+        if use_conj_minusQ:
+            rhoQ = np.conj(rho2[idx(-Q)])
+        else:
+            rhoQ = rho2[idx(Q)]
+
+        phiQ = Phi[(2,1,Q)][ix]
+        tQ = T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+        v += phase * phiQ * tQ * rhoQ
+
+    return v
+
+
+if RUN_DIAG:
+    diag_print_profile_family_mismatch()
+
 V21_profile = np.zeros_like(xgrid)
 V21_2_profile = np.zeros_like(xgrid)
 V21_0_profile = np.zeros_like(xgrid)
 V21_m2_profile = np.zeros_like(xgrid)
 V21_m1_profile = np.zeros_like(xgrid)
+V01_profile = np.zeros_like(xgrid)
 for ix, x in enumerate(xgrid):
-    Jarr = Jrad_to_array(Jrad_0)
-    J00 = Jrad_0[(0,0)]
-    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+    J00 = J00_base
+    rho2 = rho2_base
     #print("\nFrequency x = ", x)
     #print("rho2 real:", np.real(rho2))
     #print("rho2 imag:", np.imag(rho2))
@@ -333,6 +557,7 @@ for ix, x in enumerate(xgrid):
     Phi01 = Phi[(0,1,0)][ix]
     epsV += Phi01 * T(3,1,0, theta_obs, chi_obs, gamma_obs) * J00
     epsV01 = Phi01 * T(3,1,0, theta_obs, chi_obs, gamma_obs) * J00
+    V01_profile[ix] = np.real(epsV01)
 
     #Phi02 = Phi_generalized(np.array([x]), K=0, Kp=2, Q=0, vH=vH, a=a_voigt)[0]
     Phi02 = Phi[(0,2,0)][ix]
@@ -342,6 +567,16 @@ for ix, x in enumerate(xgrid):
 
     V21 = 0+0j
     epsV21 = 0j
+
+    if RUN_DIAG and diag_is_sample_x(x):
+        # Checklist #1: gate test for Q=0 channel in V
+        gate_q0 = Phi01 * T(3,1,0,theta_obs,chi_obs,gamma_obs) * J00
+        print("\n[DIAG #1] x =", x, "Q0 gate term =", gate_q0,
+              "abs =", np.abs(gate_q0))
+
+    c_plus = None
+    c_minus = None
+
     # K=2 blocks
     for Q in [-2,-1,0,1,2]:
         phase = (-1)**Q
@@ -349,7 +584,7 @@ for ix, x in enumerate(xgrid):
         #phase = 1.0
         #rhoQ = rho2[idx(Q)]
         if Q == 0 and abs(x + 1) < 1e-10:
-            print("Dictionary value =", Phi[(2,1,0)][ix])
+            old_debug_print("Dictionary value =", Phi[(2,1,0)][ix])
         Phi21 = Phi[(2,1,Q)][ix]
         Phi22 = Phi[(2,2,Q)][ix]
         Phi20 = Phi[(2,0,Q)][ix]
@@ -363,31 +598,44 @@ for ix, x in enumerate(xgrid):
         # DEBUG ONLY AT ONE FREQUENCY
         # ---------------------------------------
         if x == -2 or x == -1 or x == 0 or x == 1 or x == 2:
-            print(f"\nFrequency x={x}")
+            old_debug_print(f"\nFrequency x={x}")
             term = (
                 phase
                 * Phi21
                 * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
                 * rhoQ
             )
-            print(f"\nQ = {Q}")
-            print(f"RePhi21 = {np.real(Phi21)}")
-            print(f"ImPhi21 = {np.imag(Phi21)}")
-            print(f"ReT31    = {np.real(T(3,1,Q,theta_obs,chi_obs,gamma_obs))}")
-            print(f"ImT31    = {np.imag(T(3,1,Q,theta_obs,chi_obs,gamma_obs))}")
-            print(f"RerhoQ   = {np.real(rhoQ)}")
-            print(f"ImrhoQ   = {np.imag(rhoQ)}")
-            print(f"term   = {term}")
-            print(f"term.real   = {term.real}")
-            print(f"term.imag   = {term.imag}")
+            old_debug_print(f"\nQ = {Q}")
+            old_debug_print(f"RePhi21 = {np.real(Phi21)}")
+            old_debug_print(f"ImPhi21 = {np.imag(Phi21)}")
+            old_debug_print(f"ReT31    = {np.real(T(3,1,Q,theta_obs,chi_obs,gamma_obs))}")
+            old_debug_print(f"ImT31    = {np.imag(T(3,1,Q,theta_obs,chi_obs,gamma_obs))}")
+            old_debug_print(f"RerhoQ   = {np.real(rhoQ)}")
+            old_debug_print(f"ImrhoQ   = {np.imag(rhoQ)}")
+            old_debug_print(f"term   = {term}")
+            old_debug_print(f"term.real   = {term.real}")
+            old_debug_print(f"term.imag   = {term.imag}")
         epsI += phase * Phi21 * T(0,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsQ += phase * Phi21 * T(1,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsU += phase * Phi21 * T(2,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsV += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
         epsV21 += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
+
+        if RUN_DIAG and diag_is_sample_x(x) and Q in [-1, 1]:
+            pair_term = (
+                phase
+                * Phi21
+                * T(3,1,Q,theta_obs,chi_obs,gamma_obs)
+                * rhoQ
+            )
+            if Q == 1:
+                c_plus = pair_term
+            else:
+                c_minus = pair_term
+
         if abs(x - 0.5) < 1e-10:
             V21 += phase * Phi21 * T(3,1,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
-            print("V21 contribution for Q =", Q, "is", V21)
+            old_debug_print("V21 contribution for Q =", Q, "is", V21)
 
         #Phi22 = Phi_generalized(np.array([x]), K=2, Kp=2, Q=Q, vH=vH, a=a_voigt)[0]
         epsI += phase * Phi22 * T(0,2,Q,theta_obs,chi_obs,gamma_obs) * rhoQ
@@ -429,16 +677,87 @@ for ix, x in enumerate(xgrid):
                 * rhoQ
             ).real
 
+    if RUN_DIAG and diag_is_sample_x(x):
+        # Checklist #2: pair-cancellation residual for Q=+/-1
+        if c_plus is not None and c_minus is not None:
+            pair_resid_plus = c_minus + np.conj(c_plus)
+            pair_resid_minus = c_minus - np.conj(c_plus)
+            pair_scale = max(np.abs(c_minus), np.abs(c_plus), 1e-300)
+            print(
+                "[DIAG #2] x =", x,
+                "|c_- + c_+*| =", np.abs(pair_resid_plus),
+                "rel_plus =", np.abs(pair_resid_plus)/pair_scale,
+                "|c_- - c_+*| =", np.abs(pair_resid_minus),
+                "rel_minus =", np.abs(pair_resid_minus)/pair_scale
+            )
+
+        # Checklist #5: micro-perturbation sensitivity
+        v_ref = diag_v21_variant_at_ix(ix, rho2, use_conj_minusQ=True, flip_phase=False)
+        v_no_conj = diag_v21_variant_at_ix(ix, rho2, use_conj_minusQ=False, flip_phase=False)
+        v_flip_phase = diag_v21_variant_at_ix(ix, rho2, use_conj_minusQ=True, flip_phase=True)
+        sref = np.abs(v_ref) + 1e-300
+
+        print(
+            "[DIAG #5] x =", x,
+            "|v_ref| =", np.abs(v_ref),
+            "phase(v_ref)[deg] =", complex_phase_deg(v_ref),
+            "|v_no_conj|/|v_ref| =", np.abs(v_no_conj)/sref,
+            "phase(v_no_conj)[deg] =", complex_phase_deg(v_no_conj),
+            "|v_no_conj-v_ref|/|v_ref| =", np.abs(v_no_conj - v_ref)/sref,
+            "|v_flip_phase|/|v_ref| =", np.abs(v_flip_phase)/sref,
+            "phase(v_flip_phase)[deg] =", complex_phase_deg(v_flip_phase),
+            "|v_flip_phase-v_ref|/|v_ref| =", np.abs(v_flip_phase - v_ref)/sref
+        )
+
     #epsV = epsV01 + epsV21
     #print("x =", x)
     #print("epsV01 =", epsV01)
     #print("epsV21 =", epsV21)
     #print("epsV   =", epsV)
 
-    I_prof[ix] = (np.real(epsI)*np.sqrt(np.pi))
-    Q_prof[ix] = (np.real(epsQ)*np.sqrt(np.pi))
-    U_prof[ix] = (np.real(epsU)*np.sqrt(np.pi))
-    V_prof[ix] = (np.real(epsV)*np.sqrt(np.pi))
+    i_val = np.real(epsI) * np.sqrt(np.pi)
+    q_val = np.real(epsQ) * np.sqrt(np.pi)
+    u_val = np.real(epsU) * np.sqrt(np.pi)
+    v_val = np.real(epsV) * np.sqrt(np.pi)
+
+    if np.abs(qu_back_rotation) > 0.0:
+        q_val, u_val = _rotate_qu(q_val, u_val, qu_back_rotation)
+
+    I_prof[ix] = i_val
+    Q_prof[ix] = q_val
+    U_prof[ix] = u_val
+    V_prof[ix] = v_val
+
+if RUN_DIAG:
+    # Checklist #4: odd-parity residual of V(x)
+    even_residual = np.max(np.abs(V_prof + V_prof[::-1]))
+    odd_signal = np.max(np.abs(V_prof - V_prof[::-1])) + 1e-300
+    print("\n[DIAG #4] max even residual =", even_residual)
+    print("[DIAG #4] even/odd ratio =", even_residual / odd_signal)
+
+    # Decomposition plot for vertical-field troubleshooting.
+    v01 = np.sqrt(np.pi) * V01_profile
+    v21m1 = np.sqrt(np.pi) * V21_m1_profile
+    v210 = np.sqrt(np.pi) * V21_0_profile
+    v21p1 = np.sqrt(np.pi) * V21_profile
+    v21sum = v21m1 + v210 + v21p1
+
+    fig_diag, ax_diag = plt.subplots(figsize=(9, 5))
+    ax_diag.plot(xgrid, V_prof, color="k", linewidth=2.0, label="V total")
+    ax_diag.plot(xgrid, v01, color="tab:gray", linestyle="--", label="K=0->K'=1, Q=0")
+    ax_diag.plot(xgrid, v21m1, color="tab:blue", label="K=2->K'=1, Q=-1")
+    ax_diag.plot(xgrid, v210, color="tab:green", label="K=2->K'=1, Q=0")
+    ax_diag.plot(xgrid, v21p1, color="tab:orange", label="K=2->K'=1, Q=+1")
+    ax_diag.plot(xgrid, v21sum, color="tab:red", linestyle=":", linewidth=2.0,
+                 label="K=2->K'=1 sum")
+    ax_diag.set_xlabel("Reduced frequency x")
+    ax_diag.set_ylabel("V contribution")
+    ax_diag.set_title("Stokes V decomposition (diagnostic)")
+    ax_diag.grid(alpha=0.25)
+    ax_diag.legend(fontsize=8, ncol=2)
+    fig_diag.tight_layout()
+    fig_diag.savefig("V_decomposition_diag.png", dpi=250)
+    plt.close(fig_diag)
 
 fig, ax = plt.subplots(2,2,figsize=(12,10))
 fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
@@ -459,6 +778,16 @@ plt.tight_layout()
 plt.savefig("VStokes_try_Hu{}_gamma{}_thetaB{}_vH{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), vH), dpi = 300)
 plt.close()
 
+plot_fractional_polarization(
+    xgrid,
+    I_prof,
+    Q_prof,
+    U_prof,
+    V_prof,
+    "Fractional polarization (Fig. 13.7-like, generalized branch)",
+    "Fractional_polarization_fig13_7_like_generalized.png"
+)
+
 
 Phi_test, components_test = Phi_generalized(
     xgrid,
@@ -473,7 +802,7 @@ Phi_test, components_test = Phi_generalized(
 for Mu in (-1,0,1):
     for Mup in (-1,0,1):
 
-        print(
+        old_debug_print(
             "Mu", Mu,
             "Mup", Mup,
             "Abs max", np.max(np.abs(np.imag(components_test[Mu+1,Mup+1])))
@@ -494,27 +823,27 @@ Hfull = apply_hanle(Jarr, Hu, theta_B, 0.0)
 
 np.set_printoptions(precision=6, suppress=True)
 
-print("Hfull for chi_B = 0, =")
-print(Hfull)
+old_debug_print("Hfull for chi_B = 0, =")
+old_debug_print(Hfull)
 
 Hfull_pi2 = apply_hanle(Jarr, Hu, theta_B, -np.pi/2)
-print("Hfull for chi_B = -np.pi/2, =")
-print(Hfull_pi2)
+old_debug_print("Hfull for chi_B = -np.pi/2, =")
+old_debug_print(Hfull_pi2)
 
 
 D = wigner_D2(0.0, np.pi/2, 0.0)
 
 np.set_printoptions(precision=6, suppress=True)
-print("D = ", D)
+old_debug_print("D = ", D)
 
-print("Re(D) = ", np.real(D))
-print("Im(D) = ", np.imag(D))
+old_debug_print("Re(D) = ", np.real(D))
+old_debug_print("Im(D) = ", np.imag(D))
 
-print(hanle_operator_alt(Hu, theta_B, chi_B)[:,2])
+old_debug_print(hanle_operator_alt(Hu, theta_B, chi_B)[:,2])
 
 
-print("----------------------------------------")
-print("theta_B = 90 deg, chi_B = 0.0 deg")
+old_debug_print("----------------------------------------")
+old_debug_print("theta_B = 90 deg, chi_B = 0.0 deg")
 rho = apply_hanle(Jarr, Hu, np.pi/2, 0.0)
 for Q in [-1,0,1]:
     rhoQ = rho[idx(Q)]
@@ -526,11 +855,11 @@ for Q in [-1,0,1]:
         * T(3, 1, Q, theta_obs, chi_obs, gamma_obs)
     )
 
-    print("Q = ", Q, 
-          np.max(np.abs(contrib)),
-          np.max(np.abs(contrib.imag)))
+    old_debug_print("Q = ", Q, 
+                    np.max(np.abs(contrib)),
+                    np.max(np.abs(contrib.imag)))
 
-print("theta_B = 45 deg, chi_B = -90 deg")
+old_debug_print("theta_B = 45 deg, chi_B = -90 deg")
 rho = apply_hanle(Jarr, Hu, np.pi/4, -np.pi/2)
 for Q in [-1,0,1]:
     rhoQ = rho[idx(Q)]
@@ -542,13 +871,13 @@ for Q in [-1,0,1]:
         * T(3, 1, Q, theta_obs, chi_obs, gamma_obs)
     )
 
-    print("Q = ", Q,
-          np.max(np.abs(contrib)),
-          np.max(np.abs(contrib.imag)))
+    old_debug_print("Q = ", Q,
+                    np.max(np.abs(contrib)),
+                    np.max(np.abs(contrib.imag)))
 
-print(T(3, 1, -1, theta_obs, chi_obs, gamma_obs))
-print(T(3, 1, 1, theta_obs, chi_obs, gamma_obs))
-print(T(3, 1, 0, theta_obs, chi_obs, gamma_obs))
+old_debug_print(T(3, 1, -1, theta_obs, chi_obs, gamma_obs))
+old_debug_print(T(3, 1, 1, theta_obs, chi_obs, gamma_obs))
+old_debug_print(T(3, 1, 0, theta_obs, chi_obs, gamma_obs))
 
 V_terms = {}
 V10   = np.zeros_like(xgrid)
@@ -556,11 +885,8 @@ V21m1 = np.zeros_like(xgrid)
 V210  = np.zeros_like(xgrid)
 V21p1 = np.zeros_like(xgrid)
 for ix, x in enumerate(xgrid):
-
-    Jarr = Jrad_to_array(Jrad_0)
-    J00  = Jrad_0[(0,0)]
-
-    rho2 = apply_hanle(Jarr, Hu, theta_B, chi_B)
+    J00 = J00_base
+    rho2 = rho2_base
 
     epsI = 0.0 + 0j
     epsQ = 0.0 + 0j
@@ -680,7 +1006,7 @@ for ix, x in enumerate(xgrid):
             * rhoQ
         )
         if abs(term21V) > 0:
-            print(
+            old_debug_print(
                 "Q", Q,
                 "term21V", term21V,
                 np.max(np.abs(term21V)),
@@ -746,17 +1072,25 @@ for ix, x in enumerate(xgrid):
     # ------------------------------------
     check = V21m1[ix] + V210[ix] + V21p1[ix]
 
-    print(
+    old_debug_print(
         f"x = {x:6.2f}",
         f"stored = {check: .6e}",
         f"epsV21 = {np.real(epsV21): .6e}",
         f"difference = {check - np.real(epsV21): .3e}"
     )
 
-    I_prof[ix] = np.real(epsI) * np.sqrt(np.pi)
-    Q_prof[ix] = np.real(epsQ) * np.sqrt(np.pi)
-    U_prof[ix] = np.real(epsU) * np.sqrt(np.pi)
-    V_prof[ix] = np.real(epsV) * np.sqrt(np.pi)
+    i_val = np.real(epsI) * np.sqrt(np.pi)
+    q_val = np.real(epsQ) * np.sqrt(np.pi)
+    u_val = np.real(epsU) * np.sqrt(np.pi)
+    v_val = np.real(epsV) * np.sqrt(np.pi)
+
+    if np.abs(qu_back_rotation) > 0.0:
+        q_val, u_val = _rotate_qu(q_val, u_val, qu_back_rotation)
+
+    I_prof[ix] = i_val
+    Q_prof[ix] = q_val
+    U_prof[ix] = u_val
+    V_prof[ix] = v_val
 fig, ax = plt.subplots(2,2,figsize=(12,10))
 fig.suptitle("Stokes profiles for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(Hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
 ax[0,0].plot(xgrid,I_prof)
@@ -775,8 +1109,18 @@ plt.tight_layout()
 plt.savefig("Stokes_B_Hu{}_gamma{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(Hu, np.degrees(gamma_obs), np.degrees(theta_B), np.degrees(chi_B), np.degrees(theta_obs), np.degrees(chi_obs)), dpi = 300)
 plt.close()
 
-print(np.max(np.abs(np.imag(Phi[(2,1,-1)]))))
-print(np.max(np.abs(np.real(Phi[(2,1,-1)]))))
+plot_fractional_polarization(
+    xgrid,
+    I_prof,
+    Q_prof,
+    U_prof,
+    V_prof,
+    "Fractional polarization (Fig. 13.7-like, appendix branch)",
+    "Fractional_polarization_fig13_7_like_appendix.png"
+)
+
+old_debug_print(np.max(np.abs(np.imag(Phi[(2,1,-1)]))))
+old_debug_print(np.max(np.abs(np.real(Phi[(2,1,-1)]))))
 
 Phi21 = Phi_generalized(
     xgrid,
@@ -841,37 +1185,52 @@ plt.legend()
 plt.savefig("Gen_vs_appendix_Im.png")
 plt.close()
 
-print("Abs max, app im Phi_1^21'",np.abs(np.max(np.imag(Phi_appendix_211))))
-print("Abs max, app im Phi_-1^21'",np.abs(np.max(np.imag(Phi_appendix_21m1))))
-print("Abs max, gen im Phi_1^21'", np.abs(np.max(np.imag(Phi_gen_211))))
-print("Abs max, gen im Phi_-1^21'", np.abs(np.max(np.imag(Phi_gen_21m1))))
+old_debug_print("Abs max, app im Phi_1^21'",np.abs(np.max(np.imag(Phi_appendix_211))))
+old_debug_print("Abs max, app im Phi_-1^21'",np.abs(np.max(np.imag(Phi_appendix_21m1))))
+old_debug_print("Abs max, gen im Phi_1^21'", np.abs(np.max(np.imag(Phi_gen_211))))
+old_debug_print("Abs max, gen im Phi_-1^21'", np.abs(np.max(np.imag(Phi_gen_21m1))))
 
-print("Abs max, app re Phi_1^21'",np.abs(np.max(np.real(Phi_appendix_211))))
-print("Abs max, app re Phi_-1^21'",np.abs(np.max(np.real(Phi_appendix_21m1))))
-print("Abs max, gen re Phi_1^21'", np.abs(np.max(np.real(Phi_gen_211))))
-print("Abs max, gen re Phi_-1^21'", np.abs(np.max(np.real(Phi_gen_21m1))))
+old_debug_print("Abs max, app re Phi_1^21'",np.abs(np.max(np.real(Phi_appendix_211))))
+old_debug_print("Abs max, app re Phi_-1^21'",np.abs(np.max(np.real(Phi_appendix_21m1))))
+old_debug_print("Abs max, gen re Phi_1^21'", np.abs(np.max(np.real(Phi_gen_211))))
+old_debug_print("Abs max, gen re Phi_-1^21'", np.abs(np.max(np.real(Phi_gen_21m1))))
 
 # Pogledati jednacine (3.38), (5.37), (5.45), (5.52), (6.59a), (9.6), (9.19)
 # Gamma = A_ul/4*pi
 # Raspisati sve T i Phi postupno za svaku kombinaciju K, K' i Q
 d = wigner_d2(theta_B)
-print(np.round(np.real(d @ d.T),12))
-print(np.max(np.abs(d @ d.T - np.eye(5))))
+old_debug_print(np.round(np.real(d @ d.T),12))
+old_debug_print(np.max(np.abs(d @ d.T - np.eye(5))))
 
 rho = apply_hanle(Jarr, Hu, theta_B, 0.0)
-print(rho)
+old_debug_print(rho)
 
-print("rho[-2] ?", rho[0], " expected ", np.conj(rho[4]))
-print("rho[-1] ?", rho[1], " expected ", -np.conj(rho[3]))
-print("rho[0]  ?", rho[2])
+old_debug_print("rho[-2] ?", rho[0], " expected ", np.conj(rho[4]))
+old_debug_print("rho[-1] ?", rho[1], " expected ", -np.conj(rho[3]))
+old_debug_print("rho[0]  ?", rho[2])
 
-x0 = 0.0
-for Mu in (-1,0,1):
-    for Mup in (-1,0,1):
-        print(
-            Mu,
-            Mup,
-            term,
-            phi_transition_complex(x0, Mu, 0, vH, a),
-            phi_transition_complex(x0, Mup, 0, vH, a)
-        )
+for K in [0,1,2]:
+    for Kp in [0,1,2]:
+        for Q in range(-2,3):
+
+            if abs(Q)>K or abs(Q)>Kp:
+                continue
+
+            P1 = Phi_generalized(
+                x,
+                K,Kp,Q,
+                vH,a
+            )
+
+            P2 = Phi_appendix(
+                x,
+                K,Kp,Q,
+                vH,a
+            )
+
+            err = np.max(np.abs(P1-P2))
+
+            old_debug_print(
+                K,Kp,Q,
+                err
+            )

@@ -384,13 +384,14 @@ def Phi_generalized(x, K, Kp, Q, vH, a, return_pairs = False):
 def phi_q(x, q, vH, a):
     """
     Appendix definition for q = -1,0,+1.
-    We use q -> shift = -q * vH, because q is the Zeeman component label.
+    For consistency with phi_transition_complex(x, Mu, Ml, vH, a)
+    and Eq. (10.40), use x - q*vH for the q component center.
     """
-    return np.real(phi_complex(x + q * vH, a))
+    return np.real(phi_complex(x - q * vH, a))
 
 
 def psi_q(x, q, vH, a):
-    return np.imag(phi_complex(x + q * vH, a))
+    return np.imag(phi_complex(x - q * vH, a))
 
 
 def Phi_appendix(x, K, Kp, Q, vH, a):
@@ -403,10 +404,10 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
     psi_p1 = psi_q(x, 1, vH, a)
     psi_0 = psi_q(x, 0, vH, a)
     psi_m1 = psi_q(x, -1, vH, a)
-    '''
+    
     if Q < 0:
         return np.conj(Phi_appendix(x, K, Kp, -Q, vH, a))
-    '''
+    
     if K == 0 and Kp == 0 and Q == 0:
         return (phi_p1 + phi_0 + phi_m1) / 3.0
 
@@ -452,6 +453,7 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
         return 0.25 * (phi_p1 + 1j * psi_p1 - 2.0j * psi_0 - phi_m1 + 1j * psi_m1)
     
     # Negative Q
+    '''
     if K == 1 and Kp == 1 and Q == -1:
         return -0.25 * (phi_p1 - 1j * psi_p1 + 2 * phi_0 + phi_m1 + 1j * psi_m1)
     
@@ -466,7 +468,7 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
     
     if K == 2 and Kp == 2 and Q == -2:
         return (phi_p1 - 1j * psi_p1 + phi_m1 + 1j * psi_m1)
-    
+    '''
     return np.zeros_like(x, dtype=np.complex128)
 
 # After this we can go to response functions!
