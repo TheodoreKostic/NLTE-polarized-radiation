@@ -403,10 +403,10 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
     psi_p1 = psi_q(x, 1, vH, a)
     psi_0 = psi_q(x, 0, vH, a)
     psi_m1 = psi_q(x, -1, vH, a)
-
+    '''
     if Q < 0:
         return np.conj(Phi_appendix(x, K, Kp, -Q, vH, a))
-
+    '''
     if K == 0 and Kp == 0 and Q == 0:
         return (phi_p1 + phi_0 + phi_m1) / 3.0
 
@@ -428,7 +428,7 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
 
     if K == 2 and Kp == 0 and Q == 0:
         #return (phi_p1 - 2.0 * phi_0 + phi_m1) / np.sqrt(3.0)
-        return -(phi_p1 - 2.0 * phi_0 + phi_m1) / (3.0 *np.sqrt(2.0))
+        return (phi_p1 - 2.0 * phi_0 + phi_m1) / (3.0 *np.sqrt(2.0))
 
     if K == 2 and Kp == 1 and Q == 0:
         return (phi_p1 - phi_m1) / (2.0 * np.sqrt(3.0))
@@ -450,7 +450,23 @@ def Phi_appendix(x, K, Kp, Q, vH, a):
 
     if K == 2 and Kp == 1 and Q == 1:
         return 0.25 * (phi_p1 + 1j * psi_p1 - 2.0j * psi_0 - phi_m1 + 1j * psi_m1)
-
+    
+    # Negative Q
+    if K == 1 and Kp == 1 and Q == -1:
+        return -0.25 * (phi_p1 - 1j * psi_p1 + 2 * phi_0 + phi_m1 + 1j * psi_m1)
+    
+    if K == 1 and Kp == 2 and Q == -1:
+        return -0.25 * (phi_p1 - 1j * psi_p1 + 2j * psi_0 - phi_m1 + 1j * psi_m1)
+    
+    if K == 2 and Kp == 1 and Q == -1:
+        return 0.25 * (phi_p1 - 1j * psi_p1 + 2j * psi_0 - phi_m1 - 1j * psi_m1)
+    
+    if K == 2 and Kp == 2 and Q == -1:
+        return 0.25 * (phi_p1 - 1j * psi_p1 + 2 * phi_0 + phi_m1 + 1j * psi_m1)
+    
+    if K == 2 and Kp == 2 and Q == -2:
+        return (phi_p1 - 1j * psi_p1 + phi_m1 + 1j * psi_m1)
+    
     return np.zeros_like(x, dtype=np.complex128)
 
 # After this we can go to response functions!
