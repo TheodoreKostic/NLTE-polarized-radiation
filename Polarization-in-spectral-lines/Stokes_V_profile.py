@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -346,7 +346,7 @@ for ix, x in enumerate(xgrid):
     for Q in [-2,-1,0,1,2]:
         phase = (-1)**Q
         rhoQ = np.conj(rho2[idx(-Q)])
-        #phase = 1
+        #phase = 1.0
         #rhoQ = rho2[idx(Q)]
         if Q == 0 and abs(x + 1) < 1e-10:
             print("Dictionary value =", Phi[(2,1,0)][ix])
@@ -854,3 +854,24 @@ print("Abs max, gen re Phi_-1^21'", np.abs(np.max(np.real(Phi_gen_21m1))))
 # Pogledati jednacine (3.38), (5.37), (5.45), (5.52), (6.59a), (9.6), (9.19)
 # Gamma = A_ul/4*pi
 # Raspisati sve T i Phi postupno za svaku kombinaciju K, K' i Q
+d = wigner_d2(theta_B)
+print(np.round(np.real(d @ d.T),12))
+print(np.max(np.abs(d @ d.T - np.eye(5))))
+
+rho = apply_hanle(Jarr, Hu, theta_B, 0.0)
+print(rho)
+
+print("rho[-2] ?", rho[0], " expected ", np.conj(rho[4]))
+print("rho[-1] ?", rho[1], " expected ", -np.conj(rho[3]))
+print("rho[0]  ?", rho[2])
+
+x0 = 0.0
+for Mu in (-1,0,1):
+    for Mup in (-1,0,1):
+        print(
+            Mu,
+            Mup,
+            term,
+            phi_transition_complex(x0, Mu, 0, vH, a),
+            phi_transition_complex(x0, Mup, 0, vH, a)
+        )
