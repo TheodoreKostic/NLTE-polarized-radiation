@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -36,8 +36,8 @@ Q_prof = np.zeros_like(xgrid)
 U_prof = np.zeros_like(xgrid)
 V_prof = np.zeros_like(xgrid)
 
-theta_B = np.pi/2 # np.pi/4
-chi_B = 0.0 # -np.pi/2
+theta_B = np.pi/4 # np.pi/4
+chi_B = -np.pi/2 # -np.pi/2
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
