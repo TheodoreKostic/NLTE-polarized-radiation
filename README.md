@@ -40,3 +40,10 @@ for polarized radiation field due to presence of magnetic field.
   <li> Next goal is to code the Eq. (10.40).</li>
   <li> Optically thin enviroment → RTE formal solution can be approximated. </li>
 </ul>
+
+`26. 07. 2026.`
+<ul>
+  <li> Contraction applied in the same frame of reference (rotate LOS into magnetic frame, rotate J into magnetic frame and apply Hanle diagonally and evaluate T in that same frame using transformed LOS angle).  </li>
+  <li> Figs. 13.3, 13.6, 13.7 and 13.8 reproduced! </li>
+  <li> $\delta \neq 0$ is still under investigation - height changes amplitude as expected, but rotation is not consistent with Figs. 13.4 and 13.5. </li>
+</ul>
