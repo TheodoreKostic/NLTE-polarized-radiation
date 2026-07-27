@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -1234,3 +1234,81 @@ for K in [0,1,2]:
                 K,Kp,Q,
                 err
             )
+
+# Hanle diagram for delta = 30 degrees
+delta_ttt = np.radians(30.0)
+Hu_ttt = 0.0
+print("T for theta = np.pi/2:", T(1,2,0, np.pi/2, 0, 0))
+print("T for theta = np.pi/2 - delta_ttt:", T(1,2,0, np.pi/2 - delta_ttt, 0, 0))
+
+from Response_fun import *
+profile_kind = "generalized"
+phi_der = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH, a_voigt=a_voigt)
+B_array = np.linspace(0.0, 100.0, 100)
+
+Jarr_base = Jrad_to_array(Jrad_0)
+J00_base = Jrad_0[(0,0)]
+qu_back_rotation = 0.0
+
+
+J_rad0 = radiation_tensor(0.073)
+
+hu = hu_default
+theta_B = np.pi/2
+chi_B = 0.0
+theta_obs = np.pi/2
+chi_obs = 0.0
+gamma_obs = np.pi/2
+
+state = prepare_magnetic_branch_state(
+        J_rad0,
+        hu,
+        theta_B,
+        chi_B,
+        theta_obs,
+        chi_obs,
+        gamma_obs,
+        USE_Q_U_REFERENCE_MODE,
+    )
+
+I_response, Q_response, U_response, V_response = response_function_as_derivative_B(xgrid, phi_der, state, B_array)
+print("I_response shape:", I_response.shape)
+print("Q_response shape:", Q_response.shape)
+print("U_response shape:", U_response.shape)
+print("V_response shape:", V_response.shape)
+
+# Plot 2x2 with I, Q, U, V response functions
+fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle("Response functions for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+ax[0, 0].plot(B_array, I_response[:, 0])
+ax[0, 0].set_title("I response")
+ax[0, 1].plot(B_array, Q_response[:, 0])
+ax[0, 1].set_title("Q response") 
+ax[1, 0].plot(B_array, U_response[:, 0])
+ax[1, 0].set_title("U response")
+ax[1, 1].plot(B_array, V_response[:, 0])
+ax[1, 1].set_title("V response")
+plt.tight_layout()
+plt.savefig("Response_functions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+plt.close()   
+
+# response function for one specific B value
+B_specific = 50.0
+I_response_spec, Q_response_spec, U_response_spec, V_response_spec = response_function_B(xgrid, phi_der, state, B_specific)
+fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+fig.suptitle("Response functions for B = {}, Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(B_specific, hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+ax[0, 0].plot(xgrid, I_response_spec)
+ax[0, 0].set_title("I response")
+ax[0, 1].plot(xgrid, Q_response_spec)
+ax[0, 1].set_title("Q response")
+ax[1, 0].plot(xgrid, U_response_spec)   
+ax[1, 0].set_title("U response")
+ax[1, 1].plot(xgrid, V_response_spec)
+ax[1, 1].set_title("V response")
+plt.tight_layout()
+plt.savefig("Response_functions_B{}_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(B_specific, hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+plt.close()
+print(I_response_spec)
+print(Q_response_spec)
+print(U_response_spec)
+print(V_response_spec)
