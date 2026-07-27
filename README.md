@@ -47,3 +47,10 @@ for polarized radiation field due to presence of magnetic field.
   <li> Figs. 13.3, 13.6, 13.7 and 13.8 reproduced! </li>
   <li> $\delta \neq 0$ is still under investigation - height changes amplitude as expected, but rotation is not consistent with Figs. 13.4 and 13.5. </li>
 </ul>
+
+`27. 07. 2026.`
+<ul>
+  <li> $\delta \neq 0$ is now consistent with Figs. 13.4 and 13.5, only if we use theta_obs = $\pi/2 - \delta$. </li>
+  <li> Made a small change in the code to use theta_obs = $\pi/2 - \delta$ instead of theta_obs = $\pi/2 - \delta$ for the $\delta \neq 0$ case.  </li>
+  <li> Response function for Stokes profiles with respect to magnetic field strength is in progress.  </li>
+</ul>

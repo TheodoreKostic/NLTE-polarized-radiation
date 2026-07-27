@@ -124,7 +124,7 @@ def radiation_tensor_delta(hp, delta):
     for q in [-2, -1, 0, 1, 2]:
         jout[(2, q)] = jrot[idx(q)]
 
-    return jout, hR
+    return j0, hR
 
 
 # -----------------------------------------------------------------------------
@@ -874,7 +874,7 @@ def main():
         "Fig13_4": {
             "delta": np.radians(30.0),
             "theta_B": np.pi / 2,
-            "theta_obs": np.pi / 2,
+            "theta_obs": np.radians(90.0 - 30.0),  # theta_obs = 90 - delta
             "chi_obs": 0.0,
             "gamma_obs": np.pi / 2,
         },
@@ -882,7 +882,7 @@ def main():
         "Fig13_5": {
             "delta": np.radians(30.0),
             "theta_B": np.pi / 4,
-            "theta_obs": np.pi / 2,
+            "theta_obs": np.radians(90.0 - 30.0),  # theta_obs = 90 - delta
             "chi_obs": 0.0,
             "gamma_obs": np.pi / 2,
         },
