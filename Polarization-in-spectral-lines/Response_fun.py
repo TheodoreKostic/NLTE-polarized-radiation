@@ -93,3 +93,57 @@ def response_function_as_derivative_B(xgrid, phi, state, B_array):
     response_V_derivative = np.gradient(V_array, B_array, axis=0)
 
     return response_I_derivative, response_Q_derivative, response_U_derivative, response_V_derivative
+
+def B_finite_difference_response(xgrid, phi, state, B_array, delta_B):
+    """
+    Compute the response function of the Stokes parameters to a perturbation in the magnetic field strength B
+    using finite differences.
+
+    Parameters:
+    - xgrid: The frequency grid (array).
+    - phi: The line profile function (array).
+    - state: The state of the system (dictionary containing relevant parameters).
+    - B_array: An array of magnetic field strengths (array).
+    - delta_B: The perturbation in the magnetic field strength (float).
+
+    Returns:
+    - response_fd: The response function as a finite difference (array).
+    """
+    # Initialize arrays to store the Stokes parameters for each B value
+    I_array = np.zeros((len(B_array), len(xgrid)))
+    Q_array = np.zeros((len(B_array), len(xgrid)))
+    U_array = np.zeros((len(B_array), len(xgrid)))
+    V_array = np.zeros((len(B_array), len(xgrid)))
+
+    # Compute the Stokes parameters for each B value
+    for i, B in enumerate(B_array):
+        state['B'] = B
+        I_array[i], Q_array[i], U_array[i], V_array[i] = compute_stokes_profiles(xgrid, phi, state)
+
+    # Compute the response function as a finite difference with respect to B
+    response_I_fd = np.zeros_like(I_array)
+    response_Q_fd = np.zeros_like(Q_array)
+    response_U_fd = np.zeros_like(U_array)
+    response_V_fd = np.zeros_like(V_array)
+
+    for i in range(len(B_array)):
+        if i == 0:
+            # Forward difference for the first point
+            response_I_fd[i] = (I_array[i + 1] - I_array[i]) / delta_B
+            response_Q_fd[i] = (Q_array[i + 1] - Q_array[i]) / delta_B
+            response_U_fd[i] = (U_array[i + 1] - U_array[i]) / delta_B
+            response_V_fd[i] = (V_array[i + 1] - V_array[i]) / delta_B
+        elif i == len(B_array) - 1:
+            # Backward difference for the last point
+            response_I_fd[i] = (I_array[i] - I_array[i - 1]) / delta_B
+            response_Q_fd[i] = (Q_array[i] - Q_array[i - 1]) / delta_B
+            response_U_fd[i] = (U_array[i] - U_array[i - 1]) / delta_B
+            response_V_fd[i] = (V_array[i] - V_array[i - 1]) / delta_B
+        else:
+            # Central difference for the interior points
+            response_I_fd[i] = (I_array[i + 1] - I_array[i - 1]) / (2 * delta_B)
+            response_Q_fd[i] = (Q_array[i + 1] - Q_array[i - 1]) / (2 * delta_B)
+            response_U_fd[i] = (U_array[i + 1] - U_array[i - 1]) / (2 * delta_B)
+            response_V_fd[i] = (V_array[i + 1] - V_array[i - 1]) / (2 * delta_B)
+
+    return response_I_fd / I_array, response_Q_fd / Q_array, response_U_fd / U_array, response_V_fd / V_array

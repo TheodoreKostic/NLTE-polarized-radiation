@@ -1280,13 +1280,13 @@ print("V_response shape:", V_response.shape)
 # Plot 2x2 with I, Q, U, V response functions
 fig, ax = plt.subplots(2, 2, figsize=(12, 10))
 fig.suptitle("Response functions for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
-ax[0, 0].plot(B_array, I_response[:, 0])
+ax[0, 0].plot(B_array, I_response[:, 50])
 ax[0, 0].set_title("I response")
-ax[0, 1].plot(B_array, Q_response[:, 0])
+ax[0, 1].plot(B_array, Q_response[:, 50])
 ax[0, 1].set_title("Q response") 
-ax[1, 0].plot(B_array, U_response[:, 0])
+ax[1, 0].plot(B_array, U_response[:, 50])
 ax[1, 0].set_title("U response")
-ax[1, 1].plot(B_array, V_response[:, 0])
+ax[1, 1].plot(B_array, V_response[:, 50])
 ax[1, 1].set_title("V response")
 plt.tight_layout()
 plt.savefig("Response_functions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
@@ -1312,3 +1312,159 @@ print(I_response_spec)
 print(Q_response_spec)
 print(U_response_spec)
 print(V_response_spec)
+
+# We want to calculate Stokes for one specific B_value and use delta_B = 0.1 Gauss
+# to compute the response function as a finite difference
+
+# B array for finite difference response function
+Bs_arr = np.linspace(5.69, 60.0, 100)
+# Hu for each B value
+Hus_arr = np.zeros_like(Bs_arr)
+for B in Bs_arr:
+    Hus_arr[np.where(Bs_arr == B)] = hanle_parameter_exact(B, gJu = 1.0, Aul = A_ul)
+delta_B = 5.0 # perturbation
+
+hp_array = np.linspace(0.0, 1.0, 100)
+delta_0 = 0.0
+hr_array = np.zeros_like(hp_array)
+for hp in hp_array:
+    hR = (1+hp)/np.cos(delta_0) - 1
+    hr_array[np.where(hp_array == hp)] = hR
+'''
+Jrad_arr = np.zeros_like(hr_array)
+for hr in hr_array:
+    Jrad = radiation_tensor(hr)
+    Jrad_arr[np.where(hr_array == hr)] = Jrad
+
+# 1. Prepare states for one specific B and for all Jarr 
+states_arr_const_B = []
+for j in range(len(Jrad_arr)):
+    B = 5.69
+    Hu = Hus_arr[0]
+    Jrad = Jrad_arr[j]
+    state = prepare_magnetic_branch_state(
+        Jrad,
+        Hu,
+        theta_B,
+        chi_B,
+        theta_obs,
+        chi_obs,
+        gamma_obs,
+        USE_Q_U_REFERENCE_MODE,
+    )
+    states_arr_const_B.append(state)
+
+I_response_fd, Q_response_fd, U_response_fd, V_response_fd = B_finite_difference_response(xgrid, phi_der, states_arr_const_B, Bs_arr, delta_B)
+'''
+
+def B_finite_difference_response_local(
+    xgrid,
+    phi,
+    jrad,
+    B0,
+    delta_B,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    q_u_reference_mode="fixed_gamma_rotate_qu_back",
+    gJu=1.0,
+    Aul=A_ul,
+    scheme="central",
+    normalize="I",   # None, "I", or "self"
+):
+    if delta_B <= 0.0:
+        raise ValueError("delta_B must be > 0.")
+
+    # Build baseline and perturbed states (same geometry + same J at one height)
+    hu0 = hanle_parameter_exact(B0, gJu, Aul)
+    state0 = prepare_magnetic_branch_state(
+        jrad, hu0, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
+    )
+    I0, Q0, U0, V0 = compute_stokes_profiles(xgrid, phi, state0)
+
+    hu_p = hanle_parameter_exact(B0 + delta_B, gJu, Aul)
+    state_p = prepare_magnetic_branch_state(
+        jrad, hu_p, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
+    )
+    Ip, Qp, Up, Vp = compute_stokes_profiles(xgrid, phi, state_p)
+
+    if scheme == "central":
+        hu_m = hanle_parameter_exact(B0 - delta_B, gJu, Aul)
+        state_m = prepare_magnetic_branch_state(
+            jrad, hu_m, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
+        )
+        Im, Qm, Um, Vm = compute_stokes_profiles(xgrid, phi, state_m)
+
+        dIdB = (Ip - Im) / (2.0 * delta_B)
+        dQdB = (Qp - Qm) / (2.0 * delta_B)
+        dUdB = (Up - Um) / (2.0 * delta_B)
+        dVdB = (Vp - Vm) / (2.0 * delta_B)
+    elif scheme == "forward":
+        dIdB = (Ip - I0) / delta_B
+        dQdB = (Qp - Q0) / delta_B
+        dUdB = (Up - U0) / delta_B
+        dVdB = (Vp - V0) / delta_B
+    else:
+        raise ValueError("scheme must be 'central' or 'forward'.")
+
+    # Optional normalization
+    eps = 1e-300
+    if normalize is None:
+        return dIdB, dQdB, dUdB, dVdB, I0, Q0, U0, V0
+
+    if normalize == "I":
+        denom = np.where(np.abs(I0) > eps, I0, np.nan)
+        return dIdB / denom, dQdB / denom, dUdB / denom, dVdB / denom, I0, Q0, U0, V0
+
+    if normalize == "self":
+        denI = np.where(np.abs(I0) > eps, I0, np.nan)
+        denQ = np.where(np.abs(Q0) > eps, Q0, np.nan)
+        denU = np.where(np.abs(U0) > eps, U0, np.nan)
+        denV = np.where(np.abs(V0) > eps, V0, np.nan)
+        return dIdB / denI, dQdB / denQ, dUdB / denU, dVdB / denV, I0, Q0, U0, V0
+
+    raise ValueError("normalize must be None, 'I', or 'self'.")
+
+hp_array = np.linspace(0.0, 1.0, 100)
+h_true = (1.0 + hp_array) / np.cos(delta_0) - 1.0
+
+Vresp_map = np.zeros((len(h_true), len(xgrid)))
+Iresp_map = np.zeros((len(h_true), len(xgrid)))
+for ih, hR in enumerate(hp_array):
+    jrad = radiation_tensor(hr_array[ih])   # dict
+    dIdB_relI, _, _, dVdB_relI, _, _, _, _ = B_finite_difference_response_local(
+        xgrid=xgrid,
+        phi=phi_der,
+        jrad=jrad,
+        B0=5.69,
+        delta_B=5.1,
+        theta_B=theta_B,
+        chi_B=chi_B,
+        theta_obs=theta_obs,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs,
+        q_u_reference_mode=Q_U_REFERENCE_MODE,
+        scheme="central",
+        normalize="I",
+    )
+    Vresp_map[ih, :] = dVdB_relI
+    Iresp_map[ih, :] = dIdB_relI
+
+
+plt.figure(figsize=(7, 6))
+plt.imshow(
+    Iresp_map,
+    origin="lower",
+    aspect="auto",
+    extent=[xgrid[0], xgrid[-1], h_true[0], h_true[-1]],
+    cmap="RdYlBu_r",
+    vmin=-0.001, vmax=0.001
+)
+plt.xlabel("x")
+plt.ylabel("h (true height)")
+plt.colorbar(label="(1/I) dV/dB")
+plt.tight_layout()
+plt.savefig("RF_B_V_map.png", dpi=300)
+print(Iresp_map)
