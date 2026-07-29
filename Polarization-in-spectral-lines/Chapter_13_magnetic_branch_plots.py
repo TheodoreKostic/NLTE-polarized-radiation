@@ -659,7 +659,9 @@ def compute_stokes_profiles(xgrid, phi, state):
     vp = np.zeros_like(xgrid)
 
     j00 = state["J00"]
+    #print(f"J00 = {j00}")
     rho2 = state["rho2"]
+    print(f"rho2 = {rho2}")
     theta = state["theta_obs"]
     chi = state["chi_obs"]
     gamma = state["gamma_obs"]

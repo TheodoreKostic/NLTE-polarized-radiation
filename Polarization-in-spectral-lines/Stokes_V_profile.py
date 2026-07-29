@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -15,6 +15,12 @@ from Profile_fun import *
 
 a_voigt = damping_parameter()
 a = a_voigt
+
+def _trapz(y, x):
+    if hasattr(np, "trapezoid"):
+        return np.trapezoid(y, x)
+    return np.trapz(y, x)
+
 
 B = 5.69 # G
 mu_B = 9.274 * 10e-21
@@ -125,11 +131,11 @@ def plot_fractional_polarization(x, I, Q, U, V, title, save_path):
     ax.plot(x, pU, color="tab:orange", linewidth=2.0, label="pU = U/I")
     ax.plot(x, pV, color="tab:green", linewidth=2.0, label="pV = V/I")
 
-    intI = np.trapz(I, x)
+    intI = _trapz(I, x)
     if np.abs(intI) > 1e-300:
-        pQ_tilde = np.trapz(Q, x) / intI
-        pU_tilde = np.trapz(U, x) / intI
-        pV_tilde = np.trapz(V, x) / intI
+        pQ_tilde = _trapz(Q, x) / intI
+        pU_tilde = _trapz(U, x) / intI
+        pV_tilde = _trapz(V, x) / intI
 
         ax.axhline(pQ_tilde, color="tab:blue", linestyle="--", alpha=0.8, label="~pQ")
         ax.axhline(pU_tilde, color="tab:orange", linestyle="--", alpha=0.8, label="~pU")
@@ -1379,23 +1385,32 @@ def B_finite_difference_response_local(
 
     # Build baseline and perturbed states (same geometry + same J at one height)
     hu0 = hanle_parameter_exact(B0, gJu, Aul)
+    #print("hu0 =", hu0)
     state0 = prepare_magnetic_branch_state(
         jrad, hu0, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
     )
+    #print("state0 =", state0["rho2"])
     I0, Q0, U0, V0 = compute_stokes_profiles(xgrid, phi, state0)
+    #print("I0 =", I0)
 
     hu_p = hanle_parameter_exact(B0 + delta_B, gJu, Aul)
+    #print("hu_p =", hu_p)
     state_p = prepare_magnetic_branch_state(
         jrad, hu_p, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
     )
+    #print("state_p =", state_p["rho2"])
     Ip, Qp, Up, Vp = compute_stokes_profiles(xgrid, phi, state_p)
+    #print("Ip =", Ip)
 
     if scheme == "central":
         hu_m = hanle_parameter_exact(B0 - delta_B, gJu, Aul)
+        #print("hu_m =", hu_m)
         state_m = prepare_magnetic_branch_state(
             jrad, hu_m, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
         )
+        #print("state_m =", state_m["rho2"])
         Im, Qm, Um, Vm = compute_stokes_profiles(xgrid, phi, state_m)
+        #print("Im =", Im)
 
         dIdB = (Ip - Im) / (2.0 * delta_B)
         dQdB = (Qp - Qm) / (2.0 * delta_B)
@@ -1438,8 +1453,8 @@ for ih, hR in enumerate(hp_array):
         xgrid=xgrid,
         phi=phi_der,
         jrad=jrad,
-        B0=5.69,
-        delta_B=5.1,
+        B0=60.0,
+        delta_B=10.0,
         theta_B=theta_B,
         chi_B=chi_B,
         theta_obs=theta_obs,
