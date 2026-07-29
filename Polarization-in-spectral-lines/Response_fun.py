@@ -147,3 +147,9 @@ def B_finite_difference_response(xgrid, phi, state, B_array, delta_B):
             response_V_fd[i] = (V_array[i + 1] - V_array[i - 1]) / (2 * delta_B)
 
     return response_I_fd / I_array, response_Q_fd / Q_array, response_U_fd / U_array, response_V_fd / V_array
+
+def gradient_B(B_pert, h):
+    # Make magnetic field gradient across the height range
+    delta_B = 0.1 * B_pert # for starters
+    B_array = np.linspace(B_pert - delta_B, B_pert + delta_B, len(h))
+    return B_array
