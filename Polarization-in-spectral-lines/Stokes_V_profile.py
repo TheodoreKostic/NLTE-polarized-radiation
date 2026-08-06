@@ -3,9 +3,9 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -1248,6 +1248,12 @@ print("T for theta = np.pi/2:", T(1,2,0, np.pi/2, 0, 0))
 print("T for theta = np.pi/2 - delta_ttt:", T(1,2,0, np.pi/2 - delta_ttt, 0, 0))
 
 from Response_fun import *
+
+
+def _vH_from_B(B_value):
+    return 1.3996e6 * B_value / default_Delta_nu_D
+
+
 profile_kind = "generalized"
 phi_der = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH, a_voigt=a_voigt)
 B_array = np.linspace(0.0, 100.0, 100)
@@ -1266,6 +1272,8 @@ theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
 
+RUN_LEGACY_RESPONSE_FUN = False
+
 state = prepare_magnetic_branch_state(
         J_rad0,
         hu,
@@ -1274,50 +1282,51 @@ state = prepare_magnetic_branch_state(
         theta_obs,
         chi_obs,
         gamma_obs,
-        USE_Q_U_REFERENCE_MODE,
+        Q_U_REFERENCE_MODE,
     )
 
-I_response, Q_response, U_response, V_response = response_function_as_derivative_B(xgrid, phi_der, state, B_array)
-print("I_response shape:", I_response.shape)
-print("Q_response shape:", Q_response.shape)
-print("U_response shape:", U_response.shape)
-print("V_response shape:", V_response.shape)
+if RUN_LEGACY_RESPONSE_FUN:
+    I_response, Q_response, U_response, V_response = response_function_as_derivative_B(xgrid, phi_der, state, B_array)
+    print("I_response shape:", I_response.shape)
+    print("Q_response shape:", Q_response.shape)
+    print("U_response shape:", U_response.shape)
+    print("V_response shape:", V_response.shape)
 
-# Plot 2x2 with I, Q, U, V response functions
-fig, ax = plt.subplots(2, 2, figsize=(12, 10))
-fig.suptitle("Response functions for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
-ax[0, 0].plot(B_array, I_response[:, 50])
-ax[0, 0].set_title("I response")
-ax[0, 1].plot(B_array, Q_response[:, 50])
-ax[0, 1].set_title("Q response") 
-ax[1, 0].plot(B_array, U_response[:, 50])
-ax[1, 0].set_title("U response")
-ax[1, 1].plot(B_array, V_response[:, 50])
-ax[1, 1].set_title("V response")
-plt.tight_layout()
-plt.savefig("Response_functions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
-plt.close()   
+    # Plot 2x2 with I, Q, U, V response functions
+    fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+    fig.suptitle("Response functions for Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+    ax[0, 0].plot(B_array, I_response[:, 50])
+    ax[0, 0].set_title("I response")
+    ax[0, 1].plot(B_array, Q_response[:, 50])
+    ax[0, 1].set_title("Q response")
+    ax[1, 0].plot(B_array, U_response[:, 50])
+    ax[1, 0].set_title("U response")
+    ax[1, 1].plot(B_array, V_response[:, 50])
+    ax[1, 1].set_title("V response")
+    plt.tight_layout()
+    plt.savefig("Response_functions_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+    plt.close()
 
-# response function for one specific B value
-B_specific = 50.0
-I_response_spec, Q_response_spec, U_response_spec, V_response_spec = response_function_B(xgrid, phi_der, state, B_specific)
-fig, ax = plt.subplots(2, 2, figsize=(12, 10))
-fig.suptitle("Response functions for B = {}, Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(B_specific, hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
-ax[0, 0].plot(xgrid, I_response_spec)
-ax[0, 0].set_title("I response")
-ax[0, 1].plot(xgrid, Q_response_spec)
-ax[0, 1].set_title("Q response")
-ax[1, 0].plot(xgrid, U_response_spec)   
-ax[1, 0].set_title("U response")
-ax[1, 1].plot(xgrid, V_response_spec)
-ax[1, 1].set_title("V response")
-plt.tight_layout()
-plt.savefig("Response_functions_B{}_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(B_specific, hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
-plt.close()
-print(I_response_spec)
-print(Q_response_spec)
-print(U_response_spec)
-print(V_response_spec)
+    # response function for one specific B value
+    B_specific = 50.0
+    I_response_spec, Q_response_spec, U_response_spec, V_response_spec = response_function_B(xgrid, phi_der, state, B_specific)
+    fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+    fig.suptitle("Response functions for B = {}, Hu = {}, theta_B = {}, chi_B = {}, theta_obs = {}, chi_obs = {}".format(B_specific, hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)))
+    ax[0, 0].plot(xgrid, I_response_spec)
+    ax[0, 0].set_title("I response")
+    ax[0, 1].plot(xgrid, Q_response_spec)
+    ax[0, 1].set_title("Q response")
+    ax[1, 0].plot(xgrid, U_response_spec)
+    ax[1, 0].set_title("U response")
+    ax[1, 1].plot(xgrid, V_response_spec)
+    ax[1, 1].set_title("V response")
+    plt.tight_layout()
+    plt.savefig("Response_functions_B{}_Hu{}_thetaB{}_chiB{}_thetaobs{}_chiobs{}.png".format(B_specific, hu, np.degrees(theta_B), chi_B, np.degrees(theta_obs), np.degrees(chi_obs)), dpi=300)
+    plt.close()
+    print(I_response_spec)
+    print(Q_response_spec)
+    print(U_response_spec)
+    print(V_response_spec)
 
 # We want to calculate Stokes for one specific B_value and use delta_B = 0.1 Gauss
 # to compute the response function as a finite difference
@@ -1365,7 +1374,6 @@ I_response_fd, Q_response_fd, U_response_fd, V_response_fd = B_finite_difference
 
 def B_finite_difference_response_local(
     xgrid,
-    phi,
     jrad,
     B0,
     delta_B,
@@ -1377,40 +1385,49 @@ def B_finite_difference_response_local(
     q_u_reference_mode="fixed_gamma_rotate_qu_back",
     gJu=1.0,
     Aul=A_ul,
+    profile_kind="generalized",
+    a_value=None,
     scheme="central",
-    normalize="I",   # None, "I", or "self"
+    normalize=None,   # None, "I", or "self"
+    vary_hu_with_B=True,
+    vary_vH_with_B=True,
 ):
     if delta_B <= 0.0:
         raise ValueError("delta_B must be > 0.")
 
-    # Build baseline and perturbed states (same geometry + same J at one height)
-    hu0 = hanle_parameter_exact(B0, gJu, Aul)
-    #print("hu0 =", hu0)
-    state0 = prepare_magnetic_branch_state(
-        jrad, hu0, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
-    )
-    #print("state0 =", state0["rho2"])
-    I0, Q0, U0, V0 = compute_stokes_profiles(xgrid, phi, state0)
-    #print("I0 =", I0)
+    if a_value is None:
+        a_value = a_voigt
 
-    hu_p = hanle_parameter_exact(B0 + delta_B, gJu, Aul)
-    #print("hu_p =", hu_p)
-    state_p = prepare_magnetic_branch_state(
-        jrad, hu_p, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
-    )
-    #print("state_p =", state_p["rho2"])
-    Ip, Qp, Up, Vp = compute_stokes_profiles(xgrid, phi, state_p)
-    #print("Ip =", Ip)
+    hu_ref = hanle_parameter_exact(B0, gJu, Aul)
+    vH_ref = _vH_from_B(B0)
+
+    # Recompute selected B-dependent terms while allowing dependency-isolation runs.
+    def stokes_at_B(B_value):
+        hu_value = hanle_parameter_exact(B_value, gJu, Aul) if vary_hu_with_B else hu_ref
+        vH_value = _vH_from_B(B_value) if vary_vH_with_B else vH_ref
+        phi_value = build_phi_table(
+            xgrid,
+            profile_kind=profile_kind,
+            vH=vH_value,
+            a_voigt=a_value,
+        )
+        state_value = prepare_magnetic_branch_state(
+            jrad,
+            hu_value,
+            theta_B,
+            chi_B,
+            theta_obs,
+            chi_obs,
+            gamma_obs,
+            q_u_reference_mode,
+        )
+        return compute_stokes_profiles(xgrid, phi_value, state_value)
+
+    I0, Q0, U0, V0 = stokes_at_B(B0)
+    Ip, Qp, Up, Vp = stokes_at_B(B0 + delta_B)
 
     if scheme == "central":
-        hu_m = hanle_parameter_exact(B0 - delta_B, gJu, Aul)
-        #print("hu_m =", hu_m)
-        state_m = prepare_magnetic_branch_state(
-            jrad, hu_m, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode
-        )
-        #print("state_m =", state_m["rho2"])
-        Im, Qm, Um, Vm = compute_stokes_profiles(xgrid, phi, state_m)
-        #print("Im =", Im)
+        Im, Qm, Um, Vm = stokes_at_B(B0 - delta_B)
 
         dIdB = (Ip - Im) / (2.0 * delta_B)
         dQdB = (Qp - Qm) / (2.0 * delta_B)
@@ -1447,58 +1464,352 @@ h_true = (1.0 + hp_array) / np.cos(delta_0) - 1.0
 
 Vresp_map = np.zeros((len(h_true), len(xgrid)))
 Iresp_map = np.zeros((len(h_true), len(xgrid)))
-for ih, hR in enumerate(hp_array):
-    jrad = radiation_tensor(hr_array[ih])   # dict
-    dIdB_relI, _, _, dVdB_relI, _, _, _, _ = B_finite_difference_response_local(
+Qresp_map = np.zeros((len(h_true), len(xgrid)))
+Uresp_map = np.zeros((len(h_true), len(xgrid)))
+B0 = 60.0
+delta_B = 0.2
+for ih, hR in enumerate(h_true):
+    jrad = radiation_tensor(h_true[ih])   # dict
+    dIdB, dQdB, dUdB, dVdB, _, _, _, _ = B_finite_difference_response_local(
         xgrid=xgrid,
-        phi=phi_der,
         jrad=jrad,
-        B0=60.0,
-        delta_B=10.0,
+        B0=B0,
+        delta_B=delta_B,
         theta_B=theta_B,
         chi_B=chi_B,
         theta_obs=theta_obs,
         chi_obs=chi_obs,
         gamma_obs=gamma_obs,
         q_u_reference_mode=Q_U_REFERENCE_MODE,
+        profile_kind=profile_kind,
         scheme="central",
-        normalize="I",
+        normalize=None,
     )
-    Vresp_map[ih, :] = dVdB_relI
-    Iresp_map[ih, :] = dIdB_relI
+    Iresp_map[ih, :] = dIdB
+    Qresp_map[ih, :] = dQdB
+    Uresp_map[ih, :] = dUdB
+    Vresp_map[ih, :] = dVdB
 
 
-plt.figure(figsize=(7, 6))
-plt.imshow(
-    Iresp_map,
-    origin="lower",
-    aspect="auto",
-    extent=[xgrid[0], xgrid[-1], h_true[0], h_true[-1]],
-    cmap="RdYlBu_r",
-    vmin=-0.001, vmax=0.001
+fig_resp, ax_resp = plt.subplots(2, 2, figsize=(13, 10), constrained_layout=True)
+maps = [
+    (Iresp_map, "dI/dB"),
+    (Qresp_map, "dQ/dB"),
+    (Uresp_map, "dU/dB"),
+    (Vresp_map, "dV/dB"),
+]
+
+for axis, (resp_map, label) in zip(ax_resp.ravel(), maps):
+    finite_vals = resp_map[np.isfinite(resp_map)]
+    if finite_vals.size == 0:
+        vmax = 1.0
+    else:
+        vmax = np.percentile(np.abs(finite_vals), 99.0)
+        if vmax <= 0.0:
+            vmax = np.max(np.abs(finite_vals))
+        if vmax <= 0.0:
+            vmax = 1.0
+
+    im = axis.imshow(
+        resp_map,
+        origin="lower",
+        aspect="auto",
+        extent=[xgrid[0], xgrid[-1], h_true[0], h_true[-1]],
+        cmap="RdBu_r",
+        vmin=-vmax,
+        vmax=vmax,
+    )
+    axis.set_title(label)
+    axis.set_xlabel("x")
+    axis.set_ylabel("h (true height)")
+    fig_resp.colorbar(im, ax=axis, label=label)
+
+fig_resp.suptitle(
+    "Magnetic response maps at B0={} G, delta_B={} G".format(B0, delta_B),
+    fontsize=14,
 )
-plt.xlabel("x")
-plt.ylabel("h (true height)")
-plt.colorbar(label="(1/I) dV/dB")
-plt.tight_layout()
-plt.savefig("RF_B_V_map.png", dpi=300)
-print(Iresp_map)
+fig_resp.savefig("RF_B_Stokes_2x2_B0{}_delta_B{}.png".format(B0, delta_B), dpi=300)
+plt.close(fig_resp)
+
+print("max |dI/dB| =", np.nanmax(np.abs(Iresp_map)))
+print("max |dQ/dB| =", np.nanmax(np.abs(Qresp_map)))
+print("max |dU/dB| =", np.nanmax(np.abs(Uresp_map)))
+print("max |dV/dB| =", np.nanmax(np.abs(Vresp_map)))
 
 
-delta = np.linspace(0,np.pi/2,200)
+# ---------------------------------------------------------
+# Dependency decomposition: hu(B), vH(B), and jrad(h)
+# ---------------------------------------------------------
+def _compute_stokes_response_maps(
+    xgrid,
+    h_true,
+    B0,
+    delta_B,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    q_u_reference_mode,
+    profile_kind,
+    vary_hu_with_B,
+    vary_vH_with_B,
+    use_varying_jrad,
+):
+    i_map = np.zeros((len(h_true), len(xgrid)))
+    q_map = np.zeros((len(h_true), len(xgrid)))
+    u_map = np.zeros((len(h_true), len(xgrid)))
+    v_map = np.zeros((len(h_true), len(xgrid)))
 
-A1 = T(0,2,0,delta,0,np.pi/2)
-A2 = T(0,2,0,np.pi/2-delta,0,np.pi/2)
-plt.figure(figsize=(7,6))
-plt.plot(np.degrees(delta), A1, label=r"$T(0,2,0,\delta,0,\pi/2)$")
-plt.plot(np.degrees(delta), A2, label=r"$T(0,2,0,\pi/2-\delta,0,\pi/2)$")
-plt.xlabel(r"$\delta$ [deg]")
-plt.ylabel(r"$T(0,2,0)$")
-plt.title("T(0,2,0) for delta = 0 to 90 degrees")
-plt.legend()
-plt.tight_layout()
-plt.savefig("T_0_2_0_vs_delta.png", dpi=300)
+    if use_varying_jrad:
+        jrad_ref = None
+    else:
+        ih_ref = len(h_true) // 2
+        jrad_ref = radiation_tensor(h_true[ih_ref])
 
-# delta = 90 degrees
-delta_case_90 = np.radians(90.0)
-J_delta_case_90 = radiation_tensor(delta_case_90)
+    for ih, _hval in enumerate(h_true):
+        jrad = radiation_tensor(h_true[ih]) if use_varying_jrad else jrad_ref
+        dIdB, dQdB, dUdB, dVdB, _, _, _, _ = B_finite_difference_response_local(
+            xgrid=xgrid,
+            jrad=jrad,
+            B0=B0,
+            delta_B=delta_B,
+            theta_B=theta_B,
+            chi_B=chi_B,
+            theta_obs=theta_obs,
+            chi_obs=chi_obs,
+            gamma_obs=gamma_obs,
+            q_u_reference_mode=q_u_reference_mode,
+            profile_kind=profile_kind,
+            scheme="central",
+            normalize=None,
+            vary_hu_with_B=vary_hu_with_B,
+            vary_vH_with_B=vary_vH_with_B,
+        )
+        i_map[ih, :] = dIdB
+        q_map[ih, :] = dQdB
+        u_map[ih, :] = dUdB
+        v_map[ih, :] = dVdB
+
+    return i_map, q_map, u_map, v_map
+
+
+def _choose_symmetric_vmax(arrays, percentile=99.0):
+    vmax = 0.0
+    for arr in arrays:
+        finite_vals = arr[np.isfinite(arr)]
+        if finite_vals.size == 0:
+            continue
+        cand = np.percentile(np.abs(finite_vals), percentile)
+        if cand <= 0.0:
+            cand = np.max(np.abs(finite_vals))
+        vmax = max(vmax, cand)
+    if vmax <= 0.0:
+        vmax = 1.0
+    return vmax
+
+
+def _plot_component_family_maps(
+    xgrid,
+    h_true,
+    title,
+    out_name,
+    full_maps,
+    hu_maps,
+    vh_maps,
+    coupling_maps,
+):
+    comp_specs = [
+        ("dI/dB", full_maps[0], hu_maps[0], vh_maps[0], coupling_maps[0]),
+        ("dQ/dB", full_maps[1], hu_maps[1], vh_maps[1], coupling_maps[1]),
+        ("dU/dB", full_maps[2], hu_maps[2], vh_maps[2], coupling_maps[2]),
+        ("dV/dB", full_maps[3], hu_maps[3], vh_maps[3], coupling_maps[3]),
+    ]
+
+    fig, axes = plt.subplots(4, 4, figsize=(18, 16), constrained_layout=True)
+    col_titles = ["full", "hu-only", "vH-only", "coupling"]
+    for jcol, col_title in enumerate(col_titles):
+        axes[0, jcol].set_title(col_title)
+
+    for irow, (label, full_map, hu_map, vh_map, coupling_map) in enumerate(comp_specs):
+        row_maps = [full_map, hu_map, vh_map, coupling_map]
+        row_vmax = _choose_symmetric_vmax(row_maps, percentile=99.0)
+
+        for jcol, arr in enumerate(row_maps):
+            ax = axes[irow, jcol]
+            im = ax.imshow(
+                arr,
+                origin="lower",
+                aspect="auto",
+                extent=[xgrid[0], xgrid[-1], h_true[0], h_true[-1]],
+                cmap="RdBu_r",
+                vmin=-row_vmax,
+                vmax=row_vmax,
+            )
+            if jcol == 0:
+                ax.set_ylabel("{}\nh (true height)".format(label))
+            else:
+                ax.set_ylabel("h (true height)")
+            ax.set_xlabel("x")
+            fig.colorbar(im, ax=ax)
+
+    fig.suptitle(title, fontsize=14)
+    fig.savefig(out_name, dpi=300)
+    plt.close(fig)
+
+
+def _plot_jrad_dependence_maps(
+    xgrid,
+    h_true,
+    title,
+    out_name,
+    full_vary_jrad,
+    full_fixed_jrad,
+):
+    diff_map = tuple(
+        full_vary_jrad[i] - full_fixed_jrad[i]
+        for i in range(4)
+    )
+    map_specs = [
+        ("full (varying jrad(h))", full_vary_jrad),
+        ("full (fixed jrad at mid h)", full_fixed_jrad),
+        ("difference: varying - fixed", diff_map),
+    ]
+
+    fig, axes = plt.subplots(4, 3, figsize=(15, 16), constrained_layout=True)
+    comp_labels = ["dI/dB", "dQ/dB", "dU/dB", "dV/dB"]
+
+    for jcol, (title_col, _dummy) in enumerate(map_specs):
+        axes[0, jcol].set_title(title_col)
+
+    for irow, comp_label in enumerate(comp_labels):
+        row_maps = [map_specs[0][1][irow], map_specs[1][1][irow], map_specs[2][1][irow]]
+        row_vmax = _choose_symmetric_vmax(row_maps, percentile=99.0)
+
+        for jcol, arr in enumerate(row_maps):
+            ax = axes[irow, jcol]
+            im = ax.imshow(
+                arr,
+                origin="lower",
+                aspect="auto",
+                extent=[xgrid[0], xgrid[-1], h_true[0], h_true[-1]],
+                cmap="RdBu_r",
+                vmin=-row_vmax,
+                vmax=row_vmax,
+            )
+            if jcol == 0:
+                ax.set_ylabel("{}\nh (true height)".format(comp_label))
+            else:
+                ax.set_ylabel("h (true height)")
+            ax.set_xlabel("x")
+            fig.colorbar(im, ax=ax)
+
+    fig.suptitle(title, fontsize=14)
+    fig.savefig(out_name, dpi=300)
+    plt.close(fig)
+
+
+# Configuration for dependence-isolation diagnostics.
+DECOMP_B0 = B0
+DECOMP_DELTA_B = delta_B
+
+# 1) full + hu-only + vH-only + coupling, with varying jrad(h)
+full_vary_jrad = _compute_stokes_response_maps(
+    xgrid,
+    h_true,
+    DECOMP_B0,
+    DECOMP_DELTA_B,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    Q_U_REFERENCE_MODE,
+    profile_kind,
+    vary_hu_with_B=True,
+    vary_vH_with_B=True,
+    use_varying_jrad=True,
+)
+
+hu_only_vary_jrad = _compute_stokes_response_maps(
+    xgrid,
+    h_true,
+    DECOMP_B0,
+    DECOMP_DELTA_B,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    Q_U_REFERENCE_MODE,
+    profile_kind,
+    vary_hu_with_B=True,
+    vary_vH_with_B=False,
+    use_varying_jrad=True,
+)
+
+vh_only_vary_jrad = _compute_stokes_response_maps(
+    xgrid,
+    h_true,
+    DECOMP_B0,
+    DECOMP_DELTA_B,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    Q_U_REFERENCE_MODE,
+    profile_kind,
+    vary_hu_with_B=False,
+    vary_vH_with_B=True,
+    use_varying_jrad=True,
+)
+
+coupling_vary_jrad = tuple(
+    full_vary_jrad[i] - hu_only_vary_jrad[i] - vh_only_vary_jrad[i]
+    for i in range(4)
+)
+
+_plot_component_family_maps(
+    xgrid,
+    h_true,
+    "Response decomposition (varying jrad(h)): B0={} G, delta_B={} G".format(DECOMP_B0, DECOMP_DELTA_B),
+    "RF_B_dependency_decomposition_varying_jrad_B0{}_delta_B{}.png".format(DECOMP_B0, DECOMP_DELTA_B),
+    full_vary_jrad,
+    hu_only_vary_jrad,
+    vh_only_vary_jrad,
+    coupling_vary_jrad,
+)
+
+# 2) jrad(h) dependence at full response settings
+full_fixed_jrad = _compute_stokes_response_maps(
+    xgrid,
+    h_true,
+    DECOMP_B0,
+    DECOMP_DELTA_B,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    Q_U_REFERENCE_MODE,
+    profile_kind,
+    vary_hu_with_B=True,
+    vary_vH_with_B=True,
+    use_varying_jrad=False,
+)
+
+_plot_jrad_dependence_maps(
+    xgrid,
+    h_true,
+    "jrad(h) dependence at full response: B0={} G, delta_B={} G".format(DECOMP_B0, DECOMP_DELTA_B),
+    "RF_B_jrad_dependence_B0{}_delta_B{}.png".format(DECOMP_B0, DECOMP_DELTA_B),
+    full_vary_jrad,
+    full_fixed_jrad,
+)
+
+print("[DECOMP] vmax |full dV/dB| =", np.nanmax(np.abs(full_vary_jrad[3])))
+print("[DECOMP] vmax |hu-only dV/dB| =", np.nanmax(np.abs(hu_only_vary_jrad[3])))
+print("[DECOMP] vmax |vH-only dV/dB| =", np.nanmax(np.abs(vh_only_vary_jrad[3])))
+print("[DECOMP] vmax |coupling dV/dB| =", np.nanmax(np.abs(coupling_vary_jrad[3])))
+print("[DECOMP] vmax |jrad diff dV/dB| =", np.nanmax(np.abs(full_vary_jrad[3] - full_fixed_jrad[3])))
