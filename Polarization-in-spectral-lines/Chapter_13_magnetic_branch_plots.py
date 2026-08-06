@@ -573,7 +573,7 @@ def plot_hanle_diagram(
     chi_tag = "chiB0to360"
     fname = (
         f"{fig_label}_Hanle_vH{fmt_num(vH,6)}_{hu_tag}_"
-        f"gamma{deg_tag(gamma_obs)}_thetaB{deg_tag(theta_B)}_{chi_tag}.png"
+        f"gamma{deg_tag(gamma_obs)}_thetaB{deg_tag(theta_B)}_{chi_tag}_delta{fmt_num(np.degrees(delta), 3)}.png"
     )
     out_path = os.path.join(out_dir, fname)
     fig.tight_layout()

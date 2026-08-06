@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
@@ -1483,3 +1483,22 @@ plt.colorbar(label="(1/I) dV/dB")
 plt.tight_layout()
 plt.savefig("RF_B_V_map.png", dpi=300)
 print(Iresp_map)
+
+
+delta = np.linspace(0,np.pi/2,200)
+
+A1 = T(0,2,0,delta,0,np.pi/2)
+A2 = T(0,2,0,np.pi/2-delta,0,np.pi/2)
+plt.figure(figsize=(7,6))
+plt.plot(np.degrees(delta), A1, label=r"$T(0,2,0,\delta,0,\pi/2)$")
+plt.plot(np.degrees(delta), A2, label=r"$T(0,2,0,\pi/2-\delta,0,\pi/2)$")
+plt.xlabel(r"$\delta$ [deg]")
+plt.ylabel(r"$T(0,2,0)$")
+plt.title("T(0,2,0) for delta = 0 to 90 degrees")
+plt.legend()
+plt.tight_layout()
+plt.savefig("T_0_2_0_vs_delta.png", dpi=300)
+
+# delta = 90 degrees
+delta_case_90 = np.radians(90.0)
+J_delta_case_90 = radiation_tensor(delta_case_90)
