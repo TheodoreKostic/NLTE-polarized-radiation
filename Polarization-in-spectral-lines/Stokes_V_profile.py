@@ -1813,3 +1813,43 @@ print("[DECOMP] vmax |hu-only dV/dB| =", np.nanmax(np.abs(hu_only_vary_jrad[3]))
 print("[DECOMP] vmax |vH-only dV/dB| =", np.nanmax(np.abs(vh_only_vary_jrad[3])))
 print("[DECOMP] vmax |coupling dV/dB| =", np.nanmax(np.abs(coupling_vary_jrad[3])))
 print("[DECOMP] vmax |jrad diff dV/dB| =", np.nanmax(np.abs(full_vary_jrad[3] - full_fixed_jrad[3])))
+
+# ---------------------------------------------------------
+# 1D response profiles at a single fixed height (fixed jrad)
+# ---------------------------------------------------------
+hR_fixed_1D = 0.073         # pick the height (hp/h_true value) you want to fix
+jrad_fixed = radiation_tensor(hR_fixed_1D)
+
+B0_1D = 5.69
+delta_B_1D = 0.2
+
+dIdB_1d, dQdB_1d, dUdB_1d, dVdB_1d, I0, Q0, U0, V0 = B_finite_difference_response_local(
+    xgrid=xgrid,
+    jrad=jrad_fixed,
+    B0=B0_1D,
+    delta_B=delta_B_1D,
+    theta_B=theta_B,
+    chi_B=chi_B,
+    theta_obs=theta_obs,
+    chi_obs=chi_obs,
+    gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE,
+    profile_kind=profile_kind,
+    scheme="central",
+    normalize=None,   # or "I" / "self" if you want fractional response
+)
+
+fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+for a, resp, label in zip(
+    ax.ravel(),
+    [dIdB_1d, dQdB_1d, dUdB_1d, dVdB_1d],
+    ["dI/dB", "dQ/dB", "dU/dB", "dV/dB"],
+):
+    a.plot(xgrid, resp)
+    a.set_xlabel("Reduced frequency x")
+    a.set_ylabel(label)
+    a.grid(alpha=0.3)
+
+fig.suptitle(f"Response to B at fixed h={hR_fixed_1D}, B0={B0_1D} G")
+fig.savefig(f"RF_1D_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}.png", dpi=300)
+plt.close(fig)
