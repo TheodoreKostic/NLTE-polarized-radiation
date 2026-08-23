@@ -17,6 +17,62 @@ from Chapter_13_magnetic_branch_plots import *
 def _vH_from_B(B_value):
     return 1.3996e6 * B_value / default_Delta_nu_D
 
+
+def _angles_from_field_direction(field_direction):
+    field_direction = np.asarray(field_direction, dtype=float)
+    norm = np.linalg.norm(field_direction)
+    if norm <= 0.0:
+        raise ValueError("field_direction must be nonzero.")
+
+    direction = field_direction / norm
+    theta = np.arccos(np.clip(direction[2], -1.0, 1.0))
+    chi = np.arctan2(direction[1], direction[0])
+    return theta, chi
+
+
+def directional_response_at_field_pole(
+    stokes_from_angles,
+    B_magnitude,
+    epsilon,
+    pole="north",
+):
+    if B_magnitude <= 0.0:
+        raise ValueError("B_magnitude must be > 0.")
+    if epsilon <= 0.0:
+        raise ValueError("epsilon must be > 0.")
+    if pole not in ("north", "south"):
+        raise ValueError("pole must be 'north' or 'south'.")
+
+    pole_direction = np.array([0.0, 0.0, 1.0 if pole == "north" else -1.0])
+    tangent_directions = (
+        np.array([1.0, 0.0, 0.0]),
+        np.array([0.0, 1.0, 0.0]),
+    )
+
+    directional_responses = []
+    for tangent in tangent_directions:
+        direction_plus = (
+            np.cos(epsilon) * pole_direction
+            + np.sin(epsilon) * tangent
+        )
+        direction_minus = (
+            np.cos(epsilon) * pole_direction
+            - np.sin(epsilon) * tangent
+        )
+
+        theta_plus, chi_plus = _angles_from_field_direction(direction_plus)
+        theta_minus, chi_minus = _angles_from_field_direction(direction_minus)
+
+        stokes_plus = stokes_from_angles(theta_plus, chi_plus)
+        stokes_minus = stokes_from_angles(theta_minus, chi_minus)
+        directional_responses.append(tuple(
+            (plus - minus) / (2.0 * epsilon)
+            for plus, minus in zip(stokes_plus, stokes_minus)
+        ))
+
+    return directional_responses[0], directional_responses[1]
+
+
 a_voigt = damping_parameter()
 a = a_voigt
 
@@ -273,8 +329,8 @@ delta_theta_B_1D = np.radians(5.0)
 delta_chi_B_1D = np.radians(5.0)
 
 xgrid = np.linspace(-5.0, 5.0, 200)
-theta_B = np.pi/4
-chi_B = -np.pi/2
+theta_B = np.pi/2
+chi_B = 0.0
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
@@ -605,3 +661,183 @@ for a, resp_fd, resp_grad, label in zip(
 fig.suptitle(f"Response to chi_B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_chi_B={int(np.degrees(delta_chi_B_1D))} deg: FD vs np.gradient")
 fig.savefig(f"RF_1D_compare_chi_B_h{hR_fixed_1D}_B0{B0_1D}_delta_chi_B{int(np.degrees(delta_chi_B_1D))}deg.png", dpi=300)
 plt.close(fig)
+
+common_limit = max(
+    np.max(np.abs(dIdB_1d)),
+    np.max(np.abs(dUdB_1d)),
+)
+
+fig, ax = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
+
+ax[0].plot(xgrid, dIdB_1d)
+ax[0].set_title("dI/dB")
+ax[0].set_xlabel("Reduced frequency x")
+ax[0].set_ylabel("Response")
+ax[0].set_ylim(-common_limit, common_limit)
+ax[0].grid(alpha=0.3)
+
+ax[1].plot(xgrid, dUdB_1d)
+ax[1].set_title("dU/dB")
+ax[1].set_xlabel("Reduced frequency x")
+ax[1].set_ylim(-common_limit, common_limit)
+ax[1].grid(alpha=0.3)
+
+plt.tight_layout()
+plt.savefig("RF_dI_dB_vs_dU_dB_same_scale.png", dpi=300)
+plt.close()
+
+print("I: FD vs gradient:",
+      np.max(np.abs(dIdB_1d - dIdB_center)))
+
+print("Q: FD vs gradient:",
+      np.max(np.abs(dQdB_1d - dQdB_center)))
+
+print("U: FD vs gradient:",
+      np.max(np.abs(dUdB_1d - dUdB_center)))
+
+print("V: FD vs gradient:",
+      np.max(np.abs(dVdB_1d - dVdB_center)))
+
+print("I and U are equal:",
+      np.max(np.abs(dIdB_1d - dUdB_1d)))
+
+fig, ax = plt.subplots(figsize=(8, 5))
+
+ax.plot(xgrid, dIdB_1d - dUdB_1d, label="dI/dB - dU/dB")
+ax.axhline(0.0, color="k", linestyle="--", linewidth=0.8)
+
+ax.set_xlabel("Reduced frequency x")
+ax.set_ylabel("Difference")
+ax.set_title("Difference between dI/dB and dU/dB")
+ax.grid(alpha=0.3)
+ax.legend()
+
+fig.tight_layout()
+fig.savefig("RF_dI_dB_minus_dU_dB.png", dpi=300)
+plt.close(fig)
+
+geometry_tests = [
+    (np.pi / 4, -np.pi / 2, "reference"),
+    (np.pi / 4, -np.pi / 4, "changed azimuth"),
+    (np.pi / 3, -np.pi / 2, "changed inclination"),
+    (np.pi / 4, 0.0, "vertical-plane field"),
+]
+
+for theta_test, chi_test, label in geometry_tests:
+    dI_test, _, dU_test, _, *_ = B_finite_difference_response_local(
+        xgrid=xgrid,
+        jrad=jrad_fixed,
+        B0=B0_1D,
+        delta_B=delta_B_1D,
+        theta_B=theta_test,
+        chi_B=chi_test,
+        theta_obs=theta_obs,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs,
+        q_u_reference_mode=Q_U_REFERENCE_MODE,
+    )
+
+    print(
+        label,
+        "max |dI-dU| =",
+        np.max(np.abs(dI_test - dU_test)),
+    )
+
+for mode in ["fixed_gamma_rotate_qu_back", "transport_gamma"]:
+    dI_test, _, dU_test, _, *_ = B_finite_difference_response_local(
+        xgrid=xgrid,
+        jrad=jrad_fixed,
+        B0=B0_1D,
+        delta_B=delta_B_1D,
+        theta_B=np.pi / 4,
+        chi_B=-np.pi / 2,
+        theta_obs=theta_obs,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs,
+        q_u_reference_mode=mode,
+    )
+
+    print(
+        mode,
+        np.max(np.abs(dI_test - dU_test)),
+    )
+
+for vary_hu, vary_vH, label in [
+    (True, False, "Hanle only"),
+    (False, True, "profile only"),
+    (True, True, "both"),
+]:
+    dI_test, _, dU_test, _, *_ = B_finite_difference_response_local(
+        xgrid=xgrid,
+        jrad=jrad_fixed,
+        B0=B0_1D,
+        delta_B=delta_B_1D,
+        theta_B=theta_B,
+        chi_B=chi_B,
+        theta_obs=theta_obs,
+        chi_obs=chi_obs,
+        gamma_obs=gamma_obs,
+        q_u_reference_mode="fixed_gamma_rotate_qu_back",
+        vary_hu_with_B=vary_hu,
+        vary_vH_with_B=vary_vH,
+    )
+
+    print(
+        label,
+        "max |dI-dU| =",
+        np.max(np.abs(dI_test - dU_test)),
+    )
+
+
+def stokes_from_field_angles(theta_B_value, chi_B_value):
+    hu_value = hanle_parameter_exact(B0_1D, 1.0, A_ul)
+    vH_value = _vH_from_B(B0_1D)
+    phi_value = build_phi_table(
+        xgrid,
+        profile_kind=profile_kind,
+        vH=vH_value,
+        a_voigt=a_voigt,
+    )
+    state_value = prepare_magnetic_branch_state(
+        jrad_fixed,
+        hu_value,
+        theta_B_value,
+        chi_B_value,
+        theta_obs,
+        chi_obs,
+        gamma_obs,
+        Q_U_REFERENCE_MODE,
+    )
+    return compute_stokes_profiles(xgrid, phi_value, state_value)
+
+
+pole_epsilon = np.radians(0.5)
+pole_responses = {}
+for pole in ("north", "south"):
+    tangent_1_response, tangent_2_response = directional_response_at_field_pole(
+        stokes_from_field_angles,
+        B0_1D,
+        pole_epsilon,
+        pole=pole,
+    )
+    pole_responses[pole] = (tangent_1_response, tangent_2_response)
+
+    fig, axes = plt.subplots(2, 4, figsize=(16, 7), constrained_layout=True)
+    labels = ["I", "Q", "U", "V"]
+    for column, label in enumerate(labels):
+        axes[0, column].plot(xgrid, tangent_1_response[column])
+        axes[0, column].set_title(f"D1 {label}")
+        axes[0, column].set_xlabel("Reduced frequency x")
+        axes[0, column].grid(alpha=0.3)
+
+        axes[1, column].plot(xgrid, tangent_2_response[column])
+        axes[1, column].set_title(f"D2 {label}")
+        axes[1, column].set_xlabel("Reduced frequency x")
+        axes[1, column].grid(alpha=0.3)
+
+    fig.suptitle(
+        f"Tangent-plane magnetic response at {pole} pole, "
+        f"B={B0_1D} G, epsilon={np.degrees(pole_epsilon):.3g} deg"
+    )
+    fig.savefig(f"RF_tangent_response_{pole}_pole_B{B0_1D}.png", dpi=300)
+    plt.close(fig)

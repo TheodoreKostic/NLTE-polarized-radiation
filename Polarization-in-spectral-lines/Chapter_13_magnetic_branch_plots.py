@@ -130,6 +130,28 @@ def radiation_tensor_delta(hp, delta):
 # -----------------------------------------------------------------------------
 # Magnetic-branch state preparation (no old branch here)
 # -----------------------------------------------------------------------------
+def _observer_angles_with_reference(los, qref, pole_tol=1e-10):
+    los = np.asarray(los, dtype=float)
+    los /= np.linalg.norm(los)
+
+    qref = np.asarray(qref, dtype=float)
+    qref -= np.dot(qref, los) * los
+    qref_norm = np.linalg.norm(qref)
+    if qref_norm <= pole_tol:
+        raise ValueError("The transported Q reference is parallel to the LOS.")
+    qref /= qref_norm
+
+    if np.hypot(los[0], los[1]) <= pole_tol:
+        theta = 0.0 if los[2] >= 0.0 else np.pi
+        chi = 0.0
+    else:
+        theta, chi = _angles_from_vec(los)
+
+    e_theta, e_chi = _basis_from_angles(theta, chi)
+    gamma = np.arctan2(np.dot(qref, e_chi), np.dot(qref, e_theta))
+    return theta, chi, gamma
+
+
 def prepare_magnetic_branch_state(
     jrad,
     hu,
@@ -139,6 +161,7 @@ def prepare_magnetic_branch_state(
     chi_obs,
     gamma_obs,
     q_u_reference_mode,
+    pole_tol=1e-10,
 ):
     jarr_base = Jrad_to_array(jrad)
     j00_base = jrad[(0, 0)]
@@ -154,13 +177,25 @@ def prepare_magnetic_branch_state(
     los_mag = _rotate_vert_to_mag(los_vert, theta_B, chi_B)
     qref_mag = _rotate_vert_to_mag(qref_vert, theta_B, chi_B)
 
-    theta_mag, chi_mag = _angles_from_vec(los_mag)
-
-    e_th_m, e_ch_m = _basis_from_angles(theta_mag, chi_mag)
     qref_mag = qref_mag - np.dot(qref_mag, los_mag) * los_mag
-    qref_mag = qref_mag / np.linalg.norm(qref_mag)
+    qref_norm = np.linalg.norm(qref_mag)
+    if qref_norm <= pole_tol:
+        raise ValueError("The transported Q reference is parallel to the LOS.")
+    qref_mag = qref_mag / qref_norm
 
-    gamma_transport = np.arctan2(np.dot(qref_mag, e_ch_m), np.dot(qref_mag, e_th_m))
+    transverse_norm = np.hypot(los_mag[0], los_mag[1])
+    if transverse_norm <= pole_tol:
+        # The LOS azimuth is undefined at a pole; use a fixed local chart.
+        theta_mag = 0.0 if los_mag[2] >= 0.0 else np.pi
+        chi_mag = 0.0
+    else:
+        theta_mag, chi_mag = _angles_from_vec(los_mag)
+
+    theta_mag, chi_mag, gamma_transport = _observer_angles_with_reference(
+        los_mag,
+        qref_mag,
+        pole_tol=pole_tol,
+    )
 
     if q_u_reference_mode == "transport_gamma":
         gamma_mag = gamma_transport
@@ -246,6 +281,7 @@ def hanle_point_pq_pu(
             chi_B,
             0.0,
             theta_obs,
+
             chi_obs,
             gamma_obs,
         )
@@ -454,11 +490,6 @@ def hanle_point_pq_pu(
         gamma_obs,
         q_u_reference_mode,
     )
-
-    epsI = state["J00"] + 0j
-    epsQ = 0.0 + 0j
-    epsU = 0.0 + 0j
-
     for q in [-2, -1, 0, 1, 2]:
         phase = (-1) ** q
         rhoq = np.conj(state["rho2"][idx(-q)])
