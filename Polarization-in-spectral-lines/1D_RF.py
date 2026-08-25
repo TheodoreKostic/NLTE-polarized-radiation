@@ -3,9 +3,9 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -329,8 +329,8 @@ delta_theta_B_1D = np.radians(5.0)
 delta_chi_B_1D = np.radians(5.0)
 
 xgrid = np.linspace(-5.0, 5.0, 200)
-theta_B = np.pi/2
-chi_B = 0.0
+theta_B = np.pi/2 # np.pi/3
+chi_B = 0.0 # np.pi/6
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
@@ -841,3 +841,229 @@ for pole in ("north", "south"):
     )
     fig.savefig(f"RF_tangent_response_{pole}_pole_B{B0_1D}.png", dpi=300)
     plt.close(fig)
+
+# Transform the problem to Cartesian coordinates
+# Find dI_dBx, dI_dBy, dI_dBz, etc. 
+
+def stokes_from_B_vector(
+    B_vector,
+    xgrid,
+    jrad,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    q_u_reference_mode="fixed_gamma_rotate_qu_back",
+    gJu=1.0,
+    Aul=A_ul,
+    profile_kind="generalized",
+    a_value=None,
+):
+    if a_value is None:
+        a_value = a_voigt
+
+    # hu/vH/geometry are all derived from the same vector, so perturbing |B| stays self-consistent.
+    B_vector = np.asarray(B_vector, dtype=float)
+    B_magnitude = np.linalg.norm(B_vector)
+    theta_B_value, chi_B_value = _angles_from_field_direction(B_vector)
+
+    hu_value = hanle_parameter_exact(B_magnitude, gJu, Aul)
+    vH_value = _vH_from_B(B_magnitude)
+    phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
+    state_value = prepare_magnetic_branch_state(
+        jrad,
+        hu_value,
+        theta_B_value,
+        chi_B_value,
+        theta_obs,
+        chi_obs,
+        gamma_obs,
+        q_u_reference_mode,
+    )
+    return compute_stokes_profiles(xgrid, phi_value, state_value)
+
+
+def B_cartesian_finite_difference_response(
+    xgrid,
+    jrad,
+    B_vector0,
+    delta,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    q_u_reference_mode="fixed_gamma_rotate_qu_back",
+    gJu=1.0,
+    Aul=A_ul,
+    profile_kind="generalized",
+    a_value=None,
+    scheme="central",
+    normalize=None,   # None, "I", or "self"
+):
+    if delta <= 0.0:
+        raise ValueError("delta must be > 0.")
+
+    B_vector0 = np.asarray(B_vector0, dtype=float)
+    if np.linalg.norm(B_vector0) <= 0.0:
+        raise ValueError("B_vector0 must be nonzero.")
+
+    def stokes_at(B_vector):
+        return stokes_from_B_vector(
+            B_vector, xgrid, jrad, theta_obs, chi_obs, gamma_obs,
+            q_u_reference_mode=q_u_reference_mode, gJu=gJu, Aul=Aul,
+            profile_kind=profile_kind, a_value=a_value,
+        )
+
+    I0, Q0, U0, V0 = stokes_at(B_vector0)
+
+    derivatives = []  # [dS/dBx, dS/dBy, dS/dBz], each a 4-tuple (dI,dQ,dU,dV)
+    for axis in range(3):
+        step = np.zeros(3)
+        step[axis] = delta
+
+        Ip, Qp, Up, Vp = stokes_at(B_vector0 + step)
+
+        if scheme == "central":
+            Im, Qm, Um, Vm = stokes_at(B_vector0 - step)
+            dI = (Ip - Im) / (2.0 * delta)
+            dQ = (Qp - Qm) / (2.0 * delta)
+            dU = (Up - Um) / (2.0 * delta)
+            dV = (Vp - Vm) / (2.0 * delta)
+        elif scheme == "forward":
+            dI = (Ip - I0) / delta
+            dQ = (Qp - Q0) / delta
+            dU = (Up - U0) / delta
+            dV = (Vp - V0) / delta
+        else:
+            raise ValueError("scheme must be 'central' or 'forward'.")
+
+        derivatives.append((dI, dQ, dU, dV))
+
+    eps = 1e-300
+    if normalize is None:
+        return derivatives, (I0, Q0, U0, V0)
+
+    if normalize == "I":
+        denom = np.where(np.abs(I0) > eps, I0, np.nan)
+        return [tuple(d / denom for d in comp) for comp in derivatives], (I0, Q0, U0, V0)
+
+    if normalize == "self":
+        dens = (
+            np.where(np.abs(I0) > eps, I0, np.nan),
+            np.where(np.abs(Q0) > eps, Q0, np.nan),
+            np.where(np.abs(U0) > eps, U0, np.nan),
+            np.where(np.abs(V0) > eps, V0, np.nan),
+        )
+        return [tuple(d / den for d, den in zip(comp, dens)) for comp in derivatives], (I0, Q0, U0, V0)
+
+    raise ValueError("normalize must be None, 'I', or 'self'.")
+
+
+def spherical_from_cartesian_derivatives(derivatives_cart, B_magnitude, theta_B, chi_B):
+    # Chain rule recovers d/dtheta_B, d/dchi_B from the Cartesian derivatives; stays finite at the poles.
+    dS_dBx, dS_dBy, dS_dBz = derivatives_cart
+
+    dBx_dtheta = B_magnitude * np.cos(theta_B) * np.cos(chi_B)
+    dBy_dtheta = B_magnitude * np.cos(theta_B) * np.sin(chi_B)
+    dBz_dtheta = -B_magnitude * np.sin(theta_B)
+
+    dBx_dchi = -B_magnitude * np.sin(theta_B) * np.sin(chi_B)
+    dBy_dchi = B_magnitude * np.sin(theta_B) * np.cos(chi_B)
+    dBz_dchi = 0.0
+
+    dS_dtheta = tuple(
+        dBx_dtheta * dx + dBy_dtheta * dy + dBz_dtheta * dz
+        for dx, dy, dz in zip(dS_dBx, dS_dBy, dS_dBz)
+    )
+    dS_dchi = tuple(
+        dBx_dchi * dx + dBy_dchi * dy + dBz_dchi * dz
+        for dx, dy, dz in zip(dS_dBx, dS_dBy, dS_dBz)
+    )
+    return dS_dtheta, dS_dchi
+
+
+B_vector0 = B0_1D * np.array([
+    np.sin(theta_B) * np.cos(chi_B),
+    np.sin(theta_B) * np.sin(chi_B),
+    np.cos(theta_B),
+])
+
+derivatives_cart, (I0c, Q0c, U0c, V0c) = B_cartesian_finite_difference_response(
+    xgrid=xgrid,
+    jrad=jrad_fixed,
+    B_vector0=B_vector0,
+    delta=delta_B_1D,
+    theta_obs=theta_obs,
+    chi_obs=chi_obs,
+    gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE,
+    profile_kind=profile_kind,
+    scheme="central",
+    normalize=None,
+)
+
+axis_labels = ["Bx", "By", "Bz"]
+fig, ax = plt.subplots(3, 4, figsize=(18, 10), constrained_layout=True)
+for row, (deriv, axis_label) in enumerate(zip(derivatives_cart, axis_labels)):
+    for col, (resp, stokes_label) in enumerate(zip(deriv, ["I", "Q", "U", "V"])):
+        ax[row, col].plot(xgrid, resp)
+        ax[row, col].set_title(f"d{stokes_label}/d{axis_label}")
+        ax[row, col].set_xlabel("Reduced frequency x")
+        ax[row, col].grid(alpha=0.3)
+
+fig.suptitle(f"Cartesian response at theta_B={np.degrees(theta_B):.1f} deg, chi_B={np.degrees(chi_B):.1f} deg, B0={B0_1D} G")
+fig.savefig(f"RF_cartesian_response_B0{B0_1D}_chiB{np.degrees(chi_B):.1f}_thetaB{np.degrees(theta_B):.1f}.png", dpi=300)
+plt.close(fig)
+
+dI_chi, dQ_chi, dU_chi, dV_chi, *_ = chi_B_finite_difference_response_local(
+    xgrid=xgrid, jrad=jrad_fixed, B_value=B0_1D,
+    theta_B=theta_B, chi_B0=chi_B, delta_chi_B=delta_chi_B_1D,
+    theta_obs=theta_obs, chi_obs=chi_obs, gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE, profile_kind=profile_kind,
+)
+print("max |dI/dchi - dQ/dchi| =", np.max(np.abs(dI_chi - dQ_chi)))
+
+dIdB_radial, dQdB_radial, dUdB_radial, dVdB_radial, *_ = B_finite_difference_response_local(
+    xgrid=xgrid, jrad=jrad_fixed, B0=B0_1D, delta_B=delta_B_1D,
+    theta_B=theta_B, chi_B=chi_B, theta_obs=theta_obs, chi_obs=chi_obs,
+    gamma_obs=gamma_obs, q_u_reference_mode=Q_U_REFERENCE_MODE, profile_kind=profile_kind,
+)
+n_x = np.sin(theta_B) * np.cos(chi_B)
+approx_dIdBx = dIdB_radial * n_x   # the shortcut
+
+B_vector0 = B0_1D * np.array([np.sin(theta_B)*np.cos(chi_B), np.sin(theta_B)*np.sin(chi_B), np.cos(theta_B)])
+derivatives_cart, _ = B_cartesian_finite_difference_response(
+    xgrid=xgrid, jrad=jrad_fixed, B_vector0=B_vector0, delta=delta_B_1D,
+    theta_obs=theta_obs, chi_obs=chi_obs, gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE, profile_kind=profile_kind,
+)
+true_dIdBx = derivatives_cart[0][0]  # dS/dBx, I-component
+
+print("max |shortcut - true| =", np.max(np.abs(approx_dIdBx - true_dIdBx)))
+
+def cartesian_from_spherical_derivatives(dS_dB, dS_dtheta, dS_dchi, B_magnitude, theta_B, chi_B):
+    n_x = np.sin(theta_B) * np.cos(chi_B)
+    n_y = np.sin(theta_B) * np.sin(chi_B)
+    n_z = np.cos(theta_B)
+
+    dtheta_dBx = np.cos(theta_B) * np.cos(chi_B) / B_magnitude
+    dtheta_dBy = np.cos(theta_B) * np.sin(chi_B) / B_magnitude
+    dtheta_dBz = -np.sin(theta_B) / B_magnitude
+
+    dchi_dBx = -np.sin(chi_B) / (B_magnitude * np.sin(theta_B))
+    dchi_dBy = np.cos(chi_B) / (B_magnitude * np.sin(theta_B))
+    dchi_dBz = 0.0
+
+    dS_dBx = tuple(db * n_x + dth * dtheta_dBx + dch * dchi_dBx for db, dth, dch in zip(dS_dB, dS_dtheta, dS_dchi))
+    dS_dBy = tuple(db * n_y + dth * dtheta_dBy + dch * dchi_dBy for db, dth, dch in zip(dS_dB, dS_dtheta, dS_dchi))
+    dS_dBz = tuple(db * n_z + dth * dtheta_dBz + dch * dchi_dBz for db, dth, dch in zip(dS_dB, dS_dtheta, dS_dchi))
+
+    return dS_dBx, dS_dBy, dS_dBz
+
+dS_dB_tuple = (dIdB_radial, dQdB_radial, dUdB_radial, dVdB_radial)
+dS_dtheta_tuple = (dIdth, dQdth, dUdth, dVdth)
+dS_dchi_tuple = (dIdchi, dQdchi, dUdchi, dVdchi)
+
+dS_dBx_full, dS_dBy_full, dS_dBz_full = cartesian_from_spherical_derivatives(
+    dS_dB_tuple, dS_dtheta_tuple, dS_dchi_tuple, B0_1D, theta_B, chi_B,
+)
+
+print("max |full chain rule - true dI/dBx| =", np.max(np.abs(dS_dBx_full[0] - true_dIdBx)))
