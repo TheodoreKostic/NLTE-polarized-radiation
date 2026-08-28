@@ -152,6 +152,32 @@ def _observer_angles_with_reference(los, qref, pole_tol=1e-10):
     return theta, chi, gamma
 
 
+def _magnetic_frame_basis_from_direction(field_direction, pole_tol=1e-10):
+    """Return the magnetic-frame basis as Cartesian vectors.
+
+    The third basis vector is the field direction. The first two vectors use
+    the same orientation as Rz(chi_B) @ Ry(theta_B), with a fixed chart at
+    the two vertical directions.
+    """
+    field_direction = np.asarray(field_direction, dtype=float)
+    field_norm = np.linalg.norm(field_direction)
+    if field_norm <= 0.0:
+        raise ValueError("field_direction must be nonzero.")
+
+    e_z = field_direction / field_norm
+    vertical = np.array([0.0, 0.0, 1.0])
+    e_x = np.dot(vertical, e_z) * e_z - vertical
+
+    if np.linalg.norm(e_x) <= pole_tol:
+        e_x = np.array([1.0, 0.0, 0.0])
+        e_x -= np.dot(e_x, e_z) * e_z
+
+    e_x /= np.linalg.norm(e_x)
+    e_y = np.cross(e_z, e_x)
+    e_y /= np.linalg.norm(e_y)
+    return np.column_stack((e_x, e_y, e_z))
+
+
 def prepare_magnetic_branch_state(
     jrad,
     hu,
@@ -162,6 +188,7 @@ def prepare_magnetic_branch_state(
     gamma_obs,
     q_u_reference_mode,
     pole_tol=1e-10,
+    B_vector=None,
 ):
     jarr_base = Jrad_to_array(jrad)
     j00_base = jrad[(0, 0)]
@@ -174,8 +201,13 @@ def prepare_magnetic_branch_state(
     qref_vert = np.cos(gamma_obs_vert) * e_th_v + np.sin(gamma_obs_vert) * e_ch_v
 
     los_vert = _los_vec(theta_obs_vert, chi_obs_vert)
-    los_mag = _rotate_vert_to_mag(los_vert, theta_B, chi_B)
-    qref_mag = _rotate_vert_to_mag(qref_vert, theta_B, chi_B)
+    if B_vector is None:
+        los_mag = _rotate_vert_to_mag(los_vert, theta_B, chi_B)
+        qref_mag = _rotate_vert_to_mag(qref_vert, theta_B, chi_B)
+    else:
+        magnetic_basis = _magnetic_frame_basis_from_direction(B_vector, pole_tol=pole_tol)
+        los_mag = magnetic_basis.T @ los_vert
+        qref_mag = magnetic_basis.T @ qref_vert
 
     qref_mag = qref_mag - np.dot(qref_mag, los_mag) * los_mag
     qref_norm = np.linalg.norm(qref_mag)
@@ -206,7 +238,14 @@ def prepare_magnetic_branch_state(
     else:
         raise ValueError(f"Unknown Q_U_REFERENCE_MODE: {q_u_reference_mode}")
 
-    dmag = wigner_D2(chi_B, theta_B, 0.0)
+    if B_vector is None:
+        dmag = wigner_D2(chi_B, theta_B, 0.0)
+    else:
+        field_direction = np.asarray(B_vector, dtype=float)
+        field_direction /= np.linalg.norm(field_direction)
+        theta_vector = np.arccos(np.clip(field_direction[2], -1.0, 1.0))
+        chi_vector = np.arctan2(field_direction[1], field_direction[0])
+        dmag = wigner_D2(chi_vector, theta_vector, 0.0)
     jmag = dmag.conj().T @ jarr_base
 
     rho2_base = np.zeros(5, dtype=complex)

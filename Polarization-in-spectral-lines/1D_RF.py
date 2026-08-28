@@ -1,6 +1,8 @@
 import numpy as np
 import sys
 import os
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 #script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
@@ -13,309 +15,21 @@ from Radiation_fun import *
 from Hanle_fun import *
 from Profile_fun import *
 from Chapter_13_magnetic_branch_plots import *
-
-def _vH_from_B(B_value):
-    return 1.3996e6 * B_value / default_Delta_nu_D
-
-
-def _angles_from_field_direction(field_direction):
-    field_direction = np.asarray(field_direction, dtype=float)
-    norm = np.linalg.norm(field_direction)
-    if norm <= 0.0:
-        raise ValueError("field_direction must be nonzero.")
-
-    direction = field_direction / norm
-    theta = np.arccos(np.clip(direction[2], -1.0, 1.0))
-    chi = np.arctan2(direction[1], direction[0])
-    return theta, chi
-
-
-def directional_response_at_field_pole(
-    stokes_from_angles,
-    B_magnitude,
-    epsilon,
-    pole="north",
-):
-    if B_magnitude <= 0.0:
-        raise ValueError("B_magnitude must be > 0.")
-    if epsilon <= 0.0:
-        raise ValueError("epsilon must be > 0.")
-    if pole not in ("north", "south"):
-        raise ValueError("pole must be 'north' or 'south'.")
-
-    pole_direction = np.array([0.0, 0.0, 1.0 if pole == "north" else -1.0])
-    tangent_directions = (
-        np.array([1.0, 0.0, 0.0]),
-        np.array([0.0, 1.0, 0.0]),
-    )
-
-    directional_responses = []
-    for tangent in tangent_directions:
-        direction_plus = (
-            np.cos(epsilon) * pole_direction
-            + np.sin(epsilon) * tangent
-        )
-        direction_minus = (
-            np.cos(epsilon) * pole_direction
-            - np.sin(epsilon) * tangent
-        )
-
-        theta_plus, chi_plus = _angles_from_field_direction(direction_plus)
-        theta_minus, chi_minus = _angles_from_field_direction(direction_minus)
-
-        stokes_plus = stokes_from_angles(theta_plus, chi_plus)
-        stokes_minus = stokes_from_angles(theta_minus, chi_minus)
-        directional_responses.append(tuple(
-            (plus - minus) / (2.0 * epsilon)
-            for plus, minus in zip(stokes_plus, stokes_minus)
-        ))
-
-    return directional_responses[0], directional_responses[1]
-
-
-a_voigt = damping_parameter()
-a = a_voigt
-
-def B_finite_difference_response_local(
-    xgrid,
-    jrad,
-    B0,
-    delta_B,
-    theta_B,
-    chi_B,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-    scheme="central",
-    normalize=None,   # None, "I", or "self"
-    vary_hu_with_B=True,
-    vary_vH_with_B=True,
-):
-    if delta_B <= 0.0:
-        raise ValueError("delta_B must be > 0.")
-
-    if a_value is None:
-        a_value = a_voigt
-
-    hu_ref = hanle_parameter_exact(B0, gJu, Aul)
-    vH_ref = _vH_from_B(B0)
-
-    # Recompute selected B-dependent terms while allowing dependency-isolation runs.
-    def stokes_at_B(B_value):
-        hu_value = hanle_parameter_exact(B_value, gJu, Aul) if vary_hu_with_B else hu_ref
-        vH_value = _vH_from_B(B_value) if vary_vH_with_B else vH_ref
-        phi_value = build_phi_table(
-            xgrid,
-            profile_kind=profile_kind,
-            vH=vH_value,
-            a_voigt=a_value,
-        )
-        state_value = prepare_magnetic_branch_state(
-            jrad,
-            hu_value,
-            theta_B,
-            chi_B,
-            theta_obs,
-            chi_obs,
-            gamma_obs,
-            q_u_reference_mode,
-        )
-        return compute_stokes_profiles(xgrid, phi_value, state_value)
-
-    I0, Q0, U0, V0 = stokes_at_B(B0)
-    Ip, Qp, Up, Vp = stokes_at_B(B0 + delta_B)
-
-    if scheme == "central":
-        Im, Qm, Um, Vm = stokes_at_B(B0 - delta_B)
-
-        dIdB = (Ip - Im) / (2.0 * delta_B)
-        dQdB = (Qp - Qm) / (2.0 * delta_B)
-        dUdB = (Up - Um) / (2.0 * delta_B)
-        dVdB = (Vp - Vm) / (2.0 * delta_B)
-    elif scheme == "forward":
-        dIdB = (Ip - I0) / delta_B
-        dQdB = (Qp - Q0) / delta_B
-        dUdB = (Up - U0) / delta_B
-        dVdB = (Vp - V0) / delta_B
-    else:
-        raise ValueError("scheme must be 'central' or 'forward'.")
-
-    # Optional normalization
-    eps = 1e-300
-    if normalize is None:
-        return dIdB, dQdB, dUdB, dVdB, I0, Q0, U0, V0
-
-    if normalize == "I":
-        denom = np.where(np.abs(I0) > eps, I0, np.nan)
-        return dIdB / denom, dQdB / denom, dUdB / denom, dVdB / denom, I0, Q0, U0, V0
-
-    if normalize == "self":
-        denI = np.where(np.abs(I0) > eps, I0, np.nan)
-        denQ = np.where(np.abs(Q0) > eps, Q0, np.nan)
-        denU = np.where(np.abs(U0) > eps, U0, np.nan)
-        denV = np.where(np.abs(V0) > eps, V0, np.nan)
-        return dIdB / denI, dQdB / denQ, dUdB / denU, dVdB / denV, I0, Q0, U0, V0
-
-    raise ValueError("normalize must be None, 'I', or 'self'.")
-
-def theta_B_finite_difference_response_local(
-    xgrid,
-    jrad,
-    B_value,
-    theta_B0,
-    delta_theta_B,
-    chi_B,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-    scheme="central",
-    normalize=None,   # None, "I", or "self"
-):
-    if delta_theta_B <= 0.0:
-        raise ValueError("delta_theta_B must be > 0.")
-
-    if a_value is None:
-        a_value = a_voigt
-
-    # B (hence hu, vH) is fixed, so the profile table is independent of theta_B.
-    hu_value = hanle_parameter_exact(B_value, gJu, Aul)
-    vH_value = _vH_from_B(B_value)
-    phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
-
-    def stokes_at_theta_B(theta_B_value):
-        state_value = prepare_magnetic_branch_state(
-            jrad,
-            hu_value,
-            theta_B_value,
-            chi_B,
-            theta_obs,
-            chi_obs,
-            gamma_obs,
-            q_u_reference_mode,
-        )
-        return compute_stokes_profiles(xgrid, phi_value, state_value)
-
-    I0, Q0, U0, V0 = stokes_at_theta_B(theta_B0)
-    Ip, Qp, Up, Vp = stokes_at_theta_B(theta_B0 + delta_theta_B)
-
-    if scheme == "central":
-        Im, Qm, Um, Vm = stokes_at_theta_B(theta_B0 - delta_theta_B)
-
-        dIdtheta = (Ip - Im) / (2.0 * delta_theta_B)
-        dQdtheta = (Qp - Qm) / (2.0 * delta_theta_B)
-        dUdtheta = (Up - Um) / (2.0 * delta_theta_B)
-        dVdtheta = (Vp - Vm) / (2.0 * delta_theta_B)
-    elif scheme == "forward":
-        dIdtheta = (Ip - I0) / delta_theta_B
-        dQdtheta = (Qp - Q0) / delta_theta_B
-        dUdtheta = (Up - U0) / delta_theta_B
-        dVdtheta = (Vp - V0) / delta_theta_B
-    else:
-        raise ValueError("scheme must be 'central' or 'forward'.")
-
-    eps = 1e-300
-    if normalize is None:
-        return dIdtheta, dQdtheta, dUdtheta, dVdtheta, I0, Q0, U0, V0
-
-    if normalize == "I":
-        denom = np.where(np.abs(I0) > eps, I0, np.nan)
-        return dIdtheta / denom, dQdtheta / denom, dUdtheta / denom, dVdtheta / denom, I0, Q0, U0, V0
-
-    if normalize == "self":
-        denI = np.where(np.abs(I0) > eps, I0, np.nan)
-        denQ = np.where(np.abs(Q0) > eps, Q0, np.nan)
-        denU = np.where(np.abs(U0) > eps, U0, np.nan)
-        denV = np.where(np.abs(V0) > eps, V0, np.nan)
-        return dIdtheta / denI, dQdtheta / denQ, dUdtheta / denU, dVdtheta / denV, I0, Q0, U0, V0
-
-    raise ValueError("normalize must be None, 'I', or 'self'.")
-
-
-def chi_B_finite_difference_response_local(
-    xgrid,
-    jrad,
-    B_value,
-    theta_B,
-    chi_B0,
-    delta_chi_B,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-    scheme="central",
-    normalize=None,
-):
-    if delta_chi_B <= 0.0:
-        raise ValueError("delta_chi_B must be > 0.")
-
-    if a_value is None:
-        a_value = a_voigt
-
-    hu_value = hanle_parameter_exact(B_value, gJu, Aul)
-    vH_value = _vH_from_B(B_value)
-    phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
-
-    def stokes_at_chi_B(chi_B_value):
-        state_value = prepare_magnetic_branch_state(
-            jrad,
-            hu_value,
-            theta_B,
-            chi_B_value,
-            theta_obs,
-            chi_obs,
-            gamma_obs,
-            q_u_reference_mode,
-        )
-        return compute_stokes_profiles(xgrid, phi_value, state_value)
-
-    I0, Q0, U0, V0 = stokes_at_chi_B(chi_B0)
-    Ip, Qp, Up, Vp = stokes_at_chi_B(chi_B0 + delta_chi_B)
-
-    if scheme == "central":
-        Im, Qm, Um, Vm = stokes_at_chi_B(chi_B0 - delta_chi_B)
-
-        dIdchi = (Ip - Im) / (2.0 * delta_chi_B)
-        dQdchi = (Qp - Qm) / (2.0 * delta_chi_B)
-        dUdchi = (Up - Um) / (2.0 * delta_chi_B)
-        dVdchi = (Vp - Vm) / (2.0 * delta_chi_B)
-    elif scheme == "forward":
-        dIdchi = (Ip - I0) / delta_chi_B
-        dQdchi = (Qp - Q0) / delta_chi_B
-        dUdchi = (Up - U0) / delta_chi_B
-        dVdchi = (Vp - V0) / delta_chi_B
-    else:
-        raise ValueError("scheme must be 'central' or 'forward'.")
-
-    eps = 1e-300
-    if normalize is None:
-        return dIdchi, dQdchi, dUdchi, dVdchi, I0, Q0, U0, V0
-
-    if normalize == "I":
-        denom = np.where(np.abs(I0) > eps, I0, np.nan)
-        return dIdchi / denom, dQdchi / denom, dUdchi / denom, dVdchi / denom, I0, Q0, U0, V0
-
-    if normalize == "self":
-        denI = np.where(np.abs(I0) > eps, I0, np.nan)
-        denQ = np.where(np.abs(Q0) > eps, Q0, np.nan)
-        denU = np.where(np.abs(U0) > eps, U0, np.nan)
-        denV = np.where(np.abs(V0) > eps, V0, np.nan)
-        return dIdchi / denI, dQdchi / denQ, dUdchi / denU, dVdchi / denV, I0, Q0, U0, V0
-
-    raise ValueError("normalize must be None, 'I', or 'self'.")
+from Derivates import (
+    B_cartesian_finite_difference_response,
+    B_finite_difference_response_local,
+    cartesian_from_spherical_derivatives,
+    chi_B_finite_difference_response_local,
+    compare_cartesian_derivative_methods,
+    directional_response_at_field_pole,
+    response_vs_B_gradient,
+    response_vs_chi_B_gradient,
+    response_vs_theta_B_gradient,
+    spherical_from_cartesian_derivatives,
+    stokes_from_B_vector,
+    stokes_from_field_angles,
+    theta_B_finite_difference_response_local,
+)
 
 # ---------------------------------------------------------
 # 1D response profiles at a single fixed height (fixed jrad)
@@ -329,8 +43,8 @@ delta_theta_B_1D = np.radians(5.0)
 delta_chi_B_1D = np.radians(5.0)
 
 xgrid = np.linspace(-5.0, 5.0, 200)
-theta_B = np.pi/2 # np.pi/3
-chi_B = 0.0 # np.pi/6
+theta_B = np.pi/4 # np.pi/3
+chi_B = -np.pi/2 # np.pi/6
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
@@ -427,138 +141,6 @@ fig.suptitle(f"Response to chi_B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_c
 fig.savefig(f"RF_chi_B_1D_h{hR_fixed_1D}_B0{B0_1D}_delta_chi_B{int(np.degrees(delta_chi_B_1D))}deg.png", dpi=300)
 plt.close(fig)
 
-# ----------------------------------
-# Derivative response functions using np.gradient (for comparison)
-# ----------------------------------
-
-def response_vs_B_gradient(
-    xgrid,
-    jrad,
-    B_array,
-    theta_B,
-    chi_B,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-):
-    if a_value is None:
-        a_value = a_voigt
-
-    n_b = len(B_array)
-    n_x = len(xgrid)
-    I_arr = np.zeros((n_b, n_x))
-    Q_arr = np.zeros((n_b, n_x))
-    U_arr = np.zeros((n_b, n_x))
-    V_arr = np.zeros((n_b, n_x))
-
-    # jrad (height) and observer geometry stay fixed across the whole B sweep.
-    for ib, B_value in enumerate(B_array):
-        hu_value = hanle_parameter_exact(B_value, gJu, Aul)
-        vH_value = _vH_from_B(B_value)
-        phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
-        state_value = prepare_magnetic_branch_state(
-            jrad, hu_value, theta_B, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode,
-        )
-        I_arr[ib], Q_arr[ib], U_arr[ib], V_arr[ib] = compute_stokes_profiles(xgrid, phi_value, state_value)
-
-    dIdB = np.gradient(I_arr, B_array, axis=0)
-    dQdB = np.gradient(Q_arr, B_array, axis=0)
-    dUdB = np.gradient(U_arr, B_array, axis=0)
-    dVdB = np.gradient(V_arr, B_array, axis=0)
-
-    return dIdB, dQdB, dUdB, dVdB, I_arr, Q_arr, U_arr, V_arr
-
-
-def response_vs_theta_B_gradient(
-    xgrid,
-    jrad,
-    B_value,
-    theta_B_array,
-    chi_B,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-):
-    if a_value is None:
-        a_value = a_voigt
-
-    # B (hence hu, vH) is fixed, so the profile table only needs to be built once.
-    hu_value = hanle_parameter_exact(B_value, gJu, Aul)
-    vH_value = _vH_from_B(B_value)
-    phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
-
-    n_t = len(theta_B_array)
-    n_x = len(xgrid)
-    I_arr = np.zeros((n_t, n_x))
-    Q_arr = np.zeros((n_t, n_x))
-    U_arr = np.zeros((n_t, n_x))
-    V_arr = np.zeros((n_t, n_x))
-
-    for it, theta_B_value in enumerate(theta_B_array):
-        state_value = prepare_magnetic_branch_state(
-            jrad, hu_value, theta_B_value, chi_B, theta_obs, chi_obs, gamma_obs, q_u_reference_mode,
-        )
-        I_arr[it], Q_arr[it], U_arr[it], V_arr[it] = compute_stokes_profiles(xgrid, phi_value, state_value)
-
-    dIdth = np.gradient(I_arr, theta_B_array, axis=0)
-    dQdth = np.gradient(Q_arr, theta_B_array, axis=0)
-    dUdth = np.gradient(U_arr, theta_B_array, axis=0)
-    dVdth = np.gradient(V_arr, theta_B_array, axis=0)
-
-    return dIdth, dQdth, dUdth, dVdth, I_arr, Q_arr, U_arr, V_arr
-
-
-def response_vs_chi_B_gradient(
-    xgrid,
-    jrad,
-    B_value,
-    theta_B,
-    chi_B_array,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-):
-    if a_value is None:
-        a_value = a_voigt
-
-    hu_value = hanle_parameter_exact(B_value, gJu, Aul)
-    vH_value = _vH_from_B(B_value)
-    phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
-
-    n_c = len(chi_B_array)
-    n_x = len(xgrid)
-    I_arr = np.zeros((n_c, n_x))
-    Q_arr = np.zeros((n_c, n_x))
-    U_arr = np.zeros((n_c, n_x))
-    V_arr = np.zeros((n_c, n_x))
-
-    for ic, chi_B_value in enumerate(chi_B_array):
-        state_value = prepare_magnetic_branch_state(
-            jrad, hu_value, theta_B, chi_B_value, theta_obs, chi_obs, gamma_obs, q_u_reference_mode,
-        )
-        I_arr[ic], Q_arr[ic], U_arr[ic], V_arr[ic] = compute_stokes_profiles(xgrid, phi_value, state_value)
-
-    dIdchi = np.gradient(I_arr, chi_B_array, axis=0)
-    dQdchi = np.gradient(Q_arr, chi_B_array, axis=0)
-    dUdchi = np.gradient(U_arr, chi_B_array, axis=0)
-    dVdchi = np.gradient(V_arr, chi_B_array, axis=0)
-
-    return dIdchi, dQdchi, dUdchi, dVdchi, I_arr, Q_arr, U_arr, V_arr
 
 N_STEP = 5   # points on each side of the center
 
@@ -789,28 +371,6 @@ for vary_hu, vary_vH, label in [
     )
 
 
-def stokes_from_field_angles(theta_B_value, chi_B_value):
-    hu_value = hanle_parameter_exact(B0_1D, 1.0, A_ul)
-    vH_value = _vH_from_B(B0_1D)
-    phi_value = build_phi_table(
-        xgrid,
-        profile_kind=profile_kind,
-        vH=vH_value,
-        a_voigt=a_voigt,
-    )
-    state_value = prepare_magnetic_branch_state(
-        jrad_fixed,
-        hu_value,
-        theta_B_value,
-        chi_B_value,
-        theta_obs,
-        chi_obs,
-        gamma_obs,
-        Q_U_REFERENCE_MODE,
-    )
-    return compute_stokes_profiles(xgrid, phi_value, state_value)
-
-
 pole_epsilon = np.radians(0.5)
 pole_responses = {}
 for pole in ("north", "south"):
@@ -841,143 +401,6 @@ for pole in ("north", "south"):
     )
     fig.savefig(f"RF_tangent_response_{pole}_pole_B{B0_1D}.png", dpi=300)
     plt.close(fig)
-
-# Transform the problem to Cartesian coordinates
-# Find dI_dBx, dI_dBy, dI_dBz, etc. 
-
-def stokes_from_B_vector(
-    B_vector,
-    xgrid,
-    jrad,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-):
-    if a_value is None:
-        a_value = a_voigt
-
-    # hu/vH/geometry are all derived from the same vector, so perturbing |B| stays self-consistent.
-    B_vector = np.asarray(B_vector, dtype=float)
-    B_magnitude = np.linalg.norm(B_vector)
-    theta_B_value, chi_B_value = _angles_from_field_direction(B_vector)
-
-    hu_value = hanle_parameter_exact(B_magnitude, gJu, Aul)
-    vH_value = _vH_from_B(B_magnitude)
-    phi_value = build_phi_table(xgrid, profile_kind=profile_kind, vH=vH_value, a_voigt=a_value)
-    state_value = prepare_magnetic_branch_state(
-        jrad,
-        hu_value,
-        theta_B_value,
-        chi_B_value,
-        theta_obs,
-        chi_obs,
-        gamma_obs,
-        q_u_reference_mode,
-    )
-    return compute_stokes_profiles(xgrid, phi_value, state_value)
-
-
-def B_cartesian_finite_difference_response(
-    xgrid,
-    jrad,
-    B_vector0,
-    delta,
-    theta_obs,
-    chi_obs,
-    gamma_obs,
-    q_u_reference_mode="fixed_gamma_rotate_qu_back",
-    gJu=1.0,
-    Aul=A_ul,
-    profile_kind="generalized",
-    a_value=None,
-    scheme="central",
-    normalize=None,   # None, "I", or "self"
-):
-    if delta <= 0.0:
-        raise ValueError("delta must be > 0.")
-
-    B_vector0 = np.asarray(B_vector0, dtype=float)
-    if np.linalg.norm(B_vector0) <= 0.0:
-        raise ValueError("B_vector0 must be nonzero.")
-
-    def stokes_at(B_vector):
-        return stokes_from_B_vector(
-            B_vector, xgrid, jrad, theta_obs, chi_obs, gamma_obs,
-            q_u_reference_mode=q_u_reference_mode, gJu=gJu, Aul=Aul,
-            profile_kind=profile_kind, a_value=a_value,
-        )
-
-    I0, Q0, U0, V0 = stokes_at(B_vector0)
-
-    derivatives = []  # [dS/dBx, dS/dBy, dS/dBz], each a 4-tuple (dI,dQ,dU,dV)
-    for axis in range(3):
-        step = np.zeros(3)
-        step[axis] = delta
-
-        Ip, Qp, Up, Vp = stokes_at(B_vector0 + step)
-
-        if scheme == "central":
-            Im, Qm, Um, Vm = stokes_at(B_vector0 - step)
-            dI = (Ip - Im) / (2.0 * delta)
-            dQ = (Qp - Qm) / (2.0 * delta)
-            dU = (Up - Um) / (2.0 * delta)
-            dV = (Vp - Vm) / (2.0 * delta)
-        elif scheme == "forward":
-            dI = (Ip - I0) / delta
-            dQ = (Qp - Q0) / delta
-            dU = (Up - U0) / delta
-            dV = (Vp - V0) / delta
-        else:
-            raise ValueError("scheme must be 'central' or 'forward'.")
-
-        derivatives.append((dI, dQ, dU, dV))
-
-    eps = 1e-300
-    if normalize is None:
-        return derivatives, (I0, Q0, U0, V0)
-
-    if normalize == "I":
-        denom = np.where(np.abs(I0) > eps, I0, np.nan)
-        return [tuple(d / denom for d in comp) for comp in derivatives], (I0, Q0, U0, V0)
-
-    if normalize == "self":
-        dens = (
-            np.where(np.abs(I0) > eps, I0, np.nan),
-            np.where(np.abs(Q0) > eps, Q0, np.nan),
-            np.where(np.abs(U0) > eps, U0, np.nan),
-            np.where(np.abs(V0) > eps, V0, np.nan),
-        )
-        return [tuple(d / den for d, den in zip(comp, dens)) for comp in derivatives], (I0, Q0, U0, V0)
-
-    raise ValueError("normalize must be None, 'I', or 'self'.")
-
-
-def spherical_from_cartesian_derivatives(derivatives_cart, B_magnitude, theta_B, chi_B):
-    # Chain rule recovers d/dtheta_B, d/dchi_B from the Cartesian derivatives; stays finite at the poles.
-    dS_dBx, dS_dBy, dS_dBz = derivatives_cart
-
-    dBx_dtheta = B_magnitude * np.cos(theta_B) * np.cos(chi_B)
-    dBy_dtheta = B_magnitude * np.cos(theta_B) * np.sin(chi_B)
-    dBz_dtheta = -B_magnitude * np.sin(theta_B)
-
-    dBx_dchi = -B_magnitude * np.sin(theta_B) * np.sin(chi_B)
-    dBy_dchi = B_magnitude * np.sin(theta_B) * np.cos(chi_B)
-    dBz_dchi = 0.0
-
-    dS_dtheta = tuple(
-        dBx_dtheta * dx + dBy_dtheta * dy + dBz_dtheta * dz
-        for dx, dy, dz in zip(dS_dBx, dS_dBy, dS_dBz)
-    )
-    dS_dchi = tuple(
-        dBx_dchi * dx + dBy_dchi * dy + dBz_dchi * dz
-        for dx, dy, dz in zip(dS_dBx, dS_dBy, dS_dBz)
-    )
-    return dS_dtheta, dS_dchi
 
 
 B_vector0 = B0_1D * np.array([
@@ -1036,34 +459,107 @@ derivatives_cart, _ = B_cartesian_finite_difference_response(
     q_u_reference_mode=Q_U_REFERENCE_MODE, profile_kind=profile_kind,
 )
 true_dIdBx = derivatives_cart[0][0]  # dS/dBx, I-component
+true_dIdBy = derivatives_cart[1][0]  # dS/dBy, I-component
+true_dIdBz = derivatives_cart[2][0]  # dS/dBz, I-component
 
 print("max |shortcut - true| =", np.max(np.abs(approx_dIdBx - true_dIdBx)))
 
-def cartesian_from_spherical_derivatives(dS_dB, dS_dtheta, dS_dchi, B_magnitude, theta_B, chi_B):
-    n_x = np.sin(theta_B) * np.cos(chi_B)
-    n_y = np.sin(theta_B) * np.sin(chi_B)
-    n_z = np.cos(theta_B)
-
-    dtheta_dBx = np.cos(theta_B) * np.cos(chi_B) / B_magnitude
-    dtheta_dBy = np.cos(theta_B) * np.sin(chi_B) / B_magnitude
-    dtheta_dBz = -np.sin(theta_B) / B_magnitude
-
-    dchi_dBx = -np.sin(chi_B) / (B_magnitude * np.sin(theta_B))
-    dchi_dBy = np.cos(chi_B) / (B_magnitude * np.sin(theta_B))
-    dchi_dBz = 0.0
-
-    dS_dBx = tuple(db * n_x + dth * dtheta_dBx + dch * dchi_dBx for db, dth, dch in zip(dS_dB, dS_dtheta, dS_dchi))
-    dS_dBy = tuple(db * n_y + dth * dtheta_dBy + dch * dchi_dBy for db, dth, dch in zip(dS_dB, dS_dtheta, dS_dchi))
-    dS_dBz = tuple(db * n_z + dth * dtheta_dBz + dch * dchi_dBz for db, dth, dch in zip(dS_dB, dS_dtheta, dS_dchi))
-
-    return dS_dBx, dS_dBy, dS_dBz
-
-dS_dB_tuple = (dIdB_radial, dQdB_radial, dUdB_radial, dVdB_radial)
-dS_dtheta_tuple = (dIdth, dQdth, dUdth, dVdth)
-dS_dchi_tuple = (dIdchi, dQdchi, dUdchi, dVdchi)
-
-dS_dBx_full, dS_dBy_full, dS_dBz_full = cartesian_from_spherical_derivatives(
-    dS_dB_tuple, dS_dtheta_tuple, dS_dchi_tuple, B0_1D, theta_B, chi_B,
+comparison = compare_cartesian_derivative_methods(
+    xgrid=xgrid,
+    jrad=jrad_fixed,
+    B_vector0=B_vector0,
+    delta_B=delta_B_1D,
+    theta_obs=theta_obs,
+    chi_obs=chi_obs,
+    gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE,
+    profile_kind=profile_kind,
+    delta_theta_B=delta_theta_B_1D,
+    delta_chi_B=delta_chi_B_1D,
+    a_value=None,
+    gJu=1.0,
+    Aul=A_ul,
+    scheme="central",
 )
 
-print("max |full chain rule - true dI/dBx| =", np.max(np.abs(dS_dBx_full[0] - true_dIdBx)))
+axis_labels = ["Bx", "By", "Bz"]
+stokes_labels = ["I", "Q", "U", "V"]
+fig, ax = plt.subplots(3, 4, figsize=(18, 10), constrained_layout=True)
+for row, (direct_axis, chain_axis, axis_label) in enumerate(
+    zip(comparison["direct"], comparison["chain_rule"], axis_labels)
+):
+    for column, (direct_response, chain_response, stokes_label) in enumerate(
+        zip(direct_axis, chain_axis, stokes_labels)
+    ):
+        ax[row, column].plot(
+            xgrid,
+            direct_response,
+            color="tab:blue",
+            linewidth=2.0,
+            label="direct Cartesian",
+        )
+        ax[row, column].plot(
+            xgrid,
+            chain_response,
+            color="tab:orange",
+            linestyle=":",
+            linewidth=2.0,
+            label="full chain rule",
+        )
+        ax[row, column].set_title(f"d{stokes_label}/d{axis_label}")
+        ax[row, column].set_xlabel("Reduced frequency x")
+        ax[row, column].grid(alpha=0.3)
+        ax[row, column].legend(fontsize=8)
+
+fig.suptitle(
+    f"Direct Cartesian vs full chain-rule response, B0={B0_1D} G, "
+    f"chiB={np.degrees(chi_B):.1f} deg, thetaB={np.degrees(theta_B):.1f} deg"
+)
+fig.savefig(
+    f"RF_1D_comparison_{B0_1D}_{np.degrees(chi_B):.1f}_{np.degrees(theta_B):.1f}.png",
+    dpi=300,
+)
+plt.close(fig)
+
+print("full chain-rule vs direct Cartesian max absolute differences:")
+for axis_name, axis_diffs in comparison["max_abs_diff"].items():
+    print(axis_name, {stokes_name: float(value) for stokes_name, value in axis_diffs.items()})
+
+
+# Response functions computed by perturbing Bx, By, and Bz independently
+# while evaluating Stokes quantities through the Cartesian-vector path.
+cartesian_path_derivatives, _ = B_cartesian_finite_difference_response(
+    xgrid=xgrid,
+    jrad=jrad_fixed,
+    B_vector0=B_vector0,
+    delta=delta_B_1D,
+    theta_obs=theta_obs,
+    chi_obs=chi_obs,
+    gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE,
+    profile_kind=profile_kind,
+    scheme="central",
+    normalize=None,
+)
+
+axis_labels = ["Bx", "By", "Bz"]
+stokes_labels = ["I", "Q", "U", "V"]
+fig, ax = plt.subplots(3, 4, figsize=(18, 10), constrained_layout=True)
+for row, (axis_derivatives, axis_label) in enumerate(zip(cartesian_path_derivatives, axis_labels)):
+    for column, (response, stokes_label) in enumerate(zip(axis_derivatives, stokes_labels)):
+        ax[row, column].plot(xgrid, response, color="tab:blue", linewidth=2.0)
+        ax[row, column].set_title(f"d{stokes_label}/d{axis_label}")
+        ax[row, column].set_xlabel("Reduced frequency x")
+        ax[row, column].set_ylabel("Response")
+        ax[row, column].grid(alpha=0.3)
+
+fig.suptitle(
+    f"Cartesian-vector response functions, B0={B0_1D} G, "
+    f"chiB={np.degrees(chi_B):.1f} deg, thetaB={np.degrees(theta_B):.1f} deg"
+)
+fig.savefig(
+    f"RF_1D_cartesian_path_response_{B0_1D}_{np.degrees(chi_B):.1f}_{np.degrees(theta_B):.1f}.png",
+    dpi=300,
+)
+plt.close(fig)
+
