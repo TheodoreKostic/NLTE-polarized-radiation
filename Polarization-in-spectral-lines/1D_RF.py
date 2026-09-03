@@ -5,9 +5,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
