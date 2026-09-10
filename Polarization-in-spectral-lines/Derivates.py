@@ -959,4 +959,4 @@ def J_jacobian_finite_difference(
             )
             jacobian[(key[0], key[1], part)] = (dI, dQ, dU, dV)
 
-    return jacobian
+    return jacobian # seems to work well
