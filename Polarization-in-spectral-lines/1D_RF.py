@@ -5,9 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
-#script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
+script_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(script_dir)
 
 from functions_prt import wigner_D2, wigner_d2
@@ -18,6 +16,9 @@ from Chapter_13_magnetic_branch_plots import *
 from Derivates import (
     B_cartesian_finite_difference_response,
     B_finite_difference_response_local,
+    J_component_finite_difference_response,
+    J_jacobian_finite_difference,
+    J_KQ_KEYS,
     cartesian_from_spherical_derivatives,
     chi_B_finite_difference_response_local,
     compare_cartesian_derivative_methods,
@@ -43,8 +44,8 @@ delta_theta_B_1D = np.radians(5.0)
 delta_chi_B_1D = np.radians(5.0)
 
 xgrid = np.linspace(-5.0, 5.0, 200)
-theta_B = np.pi/4 # np.pi/3
-chi_B = -np.pi/2 # np.pi/6
+theta_B = np.pi/2 # np.pi/3
+chi_B = 0.0 # np.pi/6
 theta_obs = np.pi/2
 chi_obs = 0.0
 gamma_obs = np.pi/2
@@ -562,4 +563,103 @@ fig.savefig(
     dpi=300,
 )
 plt.close(fig)
+
+
+# ---------------------------------------------------------
+# Response functions with respect to J^K_Q radiation tensor components
+# (including real and imaginary parts for non-axisymmetric terms)
+# ---------------------------------------------------------
+hu_1D = hanle_parameter_exact(B0_1D, 1.0, A_ul)
+vH_1D = 1.3996e6 * B0_1D / default_Delta_nu_D
+delta_J = 1e-4
+
+j_jacobian = J_jacobian_finite_difference(
+    xgrid=xgrid,
+    jrad_base=jrad_fixed,
+    delta=delta_J,
+    hu=hu_1D,
+    vH=vH_1D,
+    theta_B=theta_B,
+    chi_B=chi_B,
+    theta_obs=theta_obs,
+    chi_obs=chi_obs,
+    gamma_obs=gamma_obs,
+    q_u_reference_mode=Q_U_REFERENCE_MODE,
+    profile_kind=profile_kind,
+    scheme="central",
+    normalize=None,
+)
+
+# Figure 1: Grid of responses for all (K, Q) and (Real, Imag) parts across I, Q, U, V
+fig, axes = plt.subplots(6, 4, figsize=(18, 16), constrained_layout=True, sharex=True)
+stokes_labels = ["I", "Q", "U", "V"]
+
+for row_idx, key in enumerate(J_KQ_KEYS):
+    K, Q = key
+    key_label = f"J^{K}_{{{Q}}}"
+
+    resp_real = j_jacobian[(K, Q, "real")]
+    has_imag = (K, Q, "imag") in j_jacobian
+    resp_imag = j_jacobian[(K, Q, "imag")] if has_imag else None
+
+    for col_idx, stokes_label in enumerate(stokes_labels):
+        ax_curr = axes[row_idx, col_idx]
+        ax_curr.plot(
+            xgrid,
+            resp_real[col_idx],
+            color="tab:blue",
+            linewidth=1.8,
+            label=f"d{stokes_label}/d Re({key_label})",
+        )
+        if has_imag:
+            ax_curr.plot(
+                xgrid,
+                resp_imag[col_idx],
+                color="tab:orange",
+                linestyle="--",
+                linewidth=1.8,
+                label=f"d{stokes_label}/d Im({key_label})",
+            )
+
+        ax_curr.set_title(f"d{stokes_label} / d {key_label}", fontsize=10)
+        ax_curr.grid(alpha=0.3)
+        ax_curr.legend(fontsize=7, loc="upper right")
+
+        if row_idx == 5:
+            ax_curr.set_xlabel("Reduced frequency x")
+
+fig.suptitle(
+    f"Response functions to radiation tensor components J^K_Q (Re & Im parts)\n"
+    f"Fixed h={hR_fixed_1D}, B0={B0_1D} G, theta_B={np.degrees(theta_B):.1f} deg, chi_B={np.degrees(chi_B):.1f} deg",
+    fontsize=14,
+)
+fig.savefig(f"RF_1D_J_components_all_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png", dpi=300)
+plt.close(fig)
+
+# Figure 2: Focused comparison highlighting Re vs Im differences for non-zero Q alignment terms (K=2)
+fig, axes = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
+for ax_curr, (K, Q) in zip(axes.ravel(), [(2, -2), (2, -1), (2, 1), (2, 2)]):
+    dI_re, dQ_re, dU_re, dV_re = j_jacobian[(K, Q, "real")]
+    dI_im, dQ_im, dU_im, dV_im = j_jacobian[(K, Q, "imag")]
+
+    ax_curr.plot(xgrid, dQ_re, color="tab:blue", label="dQ / d Re(J)")
+    ax_curr.plot(xgrid, dQ_im, color="tab:blue", linestyle="--", label="dQ / d Im(J)")
+    ax_curr.plot(xgrid, dU_re, color="tab:red", label="dU / d Re(J)")
+    ax_curr.plot(xgrid, dU_im, color="tab:red", linestyle="--", label="dU / d Im(J)")
+
+    ax_curr.set_title(f"Stokes Q & U Response for J^2_{{{Q}}}")
+    ax_curr.set_xlabel("Reduced frequency x")
+    ax_curr.set_ylabel("Response")
+    ax_curr.grid(alpha=0.3)
+    ax_curr.legend(fontsize=8)
+
+fig.suptitle(
+    f"Comparison of Real vs. Imaginary J^2_Q response functions (Stokes Q & U)\n"
+    f"Height h={hR_fixed_1D}, B0={B0_1D} G",
+    fontsize=13,
+)
+fig.savefig(f"RF_1D_J2Q_real_vs_imag_comparison_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png", dpi=300)
+plt.close(fig)
+
+print("Finished calculating and plotting response functions for all J components.")
 
