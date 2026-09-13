@@ -53,6 +53,60 @@ gamma_obs = np.pi/2
 profile_kind = "generalized"
 Q_U_REFERENCE_MODE = "fixed_gamma_rotate_qu_back"
 
+
+def add_stokes_profile_shading(
+    response_axis,
+    stokes_profile,
+    show_scale=True,
+    color="0.35",
+    profile_label="Stokes profile",
+    spine_offset=None,
+    fill_alpha=0.18,
+    hatch=None,
+    line_style="-",
+):
+    profile_axis = response_axis.twinx()
+    profile_axis.set_zorder(response_axis.get_zorder() - 1)
+    response_axis.patch.set_visible(False)
+    if spine_offset is not None:
+        profile_axis.spines["right"].set_position(("outward", spine_offset))
+    fill_options = {
+        "color": color,
+        "alpha": fill_alpha,
+        "linewidth": 0,
+        "zorder": 0,
+    }
+    if hatch is not None:
+        fill_options.update(
+            facecolor="none",
+            edgecolor=color,
+            alpha=0.75,
+            hatch=hatch,
+            linewidth=0.5,
+        )
+    profile_axis.fill_between(
+        xgrid,
+        0.0,
+        stokes_profile,
+        **fill_options,
+    )
+    profile_axis.plot(
+        xgrid,
+        stokes_profile,
+        color=color,
+        alpha=0.45,
+        linewidth=0.8,
+        linestyle=line_style,
+        zorder=1,
+    )
+    if show_scale:
+        profile_axis.set_ylabel(profile_label, color=color)
+        profile_axis.tick_params(axis="y", colors=color)
+    else:
+        profile_axis.set_yticks([])
+    return profile_axis
+
+
 dIdB_1d, dQdB_1d, dUdB_1d, dVdB_1d, I0, Q0, U0, V0 = B_finite_difference_response_local(
     xgrid=xgrid,
     jrad=jrad_fixed,
@@ -70,11 +124,13 @@ dIdB_1d, dQdB_1d, dUdB_1d, dVdB_1d, I0, Q0, U0, V0 = B_finite_difference_respons
 )
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-for a, resp, label in zip(
+for a, resp, stokes, label in zip(
     ax.ravel(),
     [dIdB_1d, dQdB_1d, dUdB_1d, dVdB_1d],
+    [I0, Q0, U0, V0],
     ["dI/dB", "dQ/dB", "dU/dB", "dV/dB"],
 ):
+    add_stokes_profile_shading(a, stokes)
     a.plot(xgrid, resp)
     a.set_xlabel("Reduced frequency x")
     a.set_ylabel(label)
@@ -100,11 +156,13 @@ dIdth, dQdth, dUdth, dVdth, *_ = theta_B_finite_difference_response_local(
     normalize=None,   # or "I" / "self" if you want fractional
 )
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-for a, resp, label in zip(
+for a, resp, stokes, label in zip(
     ax.ravel(),
     [dIdth, dQdth, dUdth, dVdth],
+    [I0, Q0, U0, V0],
     ["dI/dtheta_B", "dQ/dtheta_B", "dU/dtheta_B", "dV/dtheta_B"],
 ):
+    add_stokes_profile_shading(a, stokes)
     a.plot(xgrid, resp)
     a.set_xlabel("Reduced frequency x")
     a.set_ylabel(label)
@@ -129,11 +187,13 @@ dIdchi, dQdchi, dUdchi, dVdchi, *_ = chi_B_finite_difference_response_local(
     normalize=None,   # or "I" / "self" if you want fractional
 )
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-for a, resp, label in zip(
+for a, resp, stokes, label in zip(
     ax.ravel(),
     [dIdchi, dQdchi, dUdchi, dVdchi],
+    [I0, Q0, U0, V0],
     ["dI/dchi_B", "dQ/dchi_B", "dU/dchi_B", "dV/dchi_B"],
 ):
+    add_stokes_profile_shading(a, stokes)
     a.plot(xgrid, resp)
     a.set_xlabel("Reduced frequency x")
     a.set_ylabel(label)
@@ -173,15 +233,17 @@ dIdchi_center, dQdchi_center, dUdchi_center, dVdchi_center = (
 )
 
 fig, ax = plt.subplots(3, 4, figsize=(18, 12), constrained_layout=True)
-for a, resp, label in zip(
+for a, resp, stokes, label in zip(
     ax.ravel(),
     [dIdB_center, dQdB_center, dUdB_center, dVdB_center,
      dIdth_center, dQdth_center, dUdth_center, dVdth_center,
      dIdchi_center, dQdchi_center, dUdchi_center, dVdchi_center],
+    [I0, Q0, U0, V0] * 3,
     ["dI/dB", "dQ/dB", "dU/dB", "dV/dB",
      "dI/dtheta_B", "dQ/dtheta_B", "dU/dtheta_B", "dV/dtheta_B",
      "dI/dchi_B", "dQ/dchi_B", "dU/dchi_B", "dV/dchi_B"],
 ):
+    add_stokes_profile_shading(a, stokes, show_scale=False)
     a.plot(xgrid, resp)
     a.set_xlabel("Reduced frequency x")
     a.set_ylabel(label)
@@ -192,12 +254,14 @@ fig.savefig(f"RF_1D_all_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}_delta_theta
 plt.close(fig)
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-for a, resp_fd, resp_grad, label in zip(
+for a, resp_fd, resp_grad, stokes, label in zip(
     ax.ravel(),
     [dIdB_1d, dQdB_1d, dUdB_1d, dVdB_1d],
     [dIdB_center, dQdB_center, dUdB_center, dVdB_center],
+    [I0, Q0, U0, V0],
     ["dI/dB", "dQ/dB", "dU/dB", "dV/dB"],
 ):
+    add_stokes_profile_shading(a, stokes)
     a.plot(xgrid, resp_fd, color="tab:blue", linewidth=2.0, label="finite difference")
     a.plot(xgrid, resp_grad, color="tab:orange", linestyle="--", linewidth=2.0, label="np.gradient")
     a.set_xlabel("Reduced frequency x")
@@ -210,12 +274,14 @@ fig.savefig(f"RF_1D_compare_B_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}.png",
 plt.close(fig)
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-for a, resp_fd, resp_grad, label in zip(
+for a, resp_fd, resp_grad, stokes, label in zip(
     ax.ravel(),
     [dIdth, dQdth, dUdth, dVdth],
     [dIdth_center, dQdth_center, dUdth_center, dVdth_center],
+    [I0, Q0, U0, V0],
     ["dI/dtheta_B", "dQ/dtheta_B", "dU/dtheta_B", "dV/dtheta_B"],
 ):
+    add_stokes_profile_shading(a, stokes)
     a.plot(xgrid, resp_fd, color="tab:blue", linewidth=2.0, label="finite difference")
     a.plot(xgrid, resp_grad, color="tab:orange", linestyle="--", linewidth=2.0, label="np.gradient")
     a.set_xlabel("Reduced frequency x")
@@ -228,12 +294,14 @@ fig.savefig(f"RF_1D_compare_theta_B_h{hR_fixed_1D}_B0{B0_1D}_delta_theta_B{int(n
 plt.close(fig)
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
-for a, resp_fd, resp_grad, label in zip(
+for a, resp_fd, resp_grad, stokes, label in zip(
     ax.ravel(),
     [dIdchi, dQdchi, dUdchi, dVdchi],
     [dIdchi_center, dQdchi_center, dUdchi_center, dVdchi_center],
+    [I0, Q0, U0, V0],
     ["dI/dchi_B", "dQ/dchi_B", "dU/dchi_B", "dV/dchi_B"],
 ):
+    add_stokes_profile_shading(a, stokes)
     a.plot(xgrid, resp_fd, color="tab:blue", linewidth=2.0, label="finite difference")
     a.plot(xgrid, resp_grad, color="tab:orange", linestyle="--", linewidth=2.0, label="np.gradient")
     a.set_xlabel("Reduced frequency x")
@@ -593,6 +661,7 @@ j_jacobian = J_jacobian_finite_difference(
 # Figure 1: Grid of responses for all (K, Q) and (Real, Imag) parts across I, Q, U, V
 fig, axes = plt.subplots(6, 4, figsize=(18, 16), constrained_layout=True, sharex=True)
 stokes_labels = ["I", "Q", "U", "V"]
+stokes_profiles = [I0, Q0, U0, V0]
 
 for row_idx, key in enumerate(J_KQ_KEYS):
     K, Q = key
@@ -604,6 +673,11 @@ for row_idx, key in enumerate(J_KQ_KEYS):
 
     for col_idx, stokes_label in enumerate(stokes_labels):
         ax_curr = axes[row_idx, col_idx]
+        add_stokes_profile_shading(
+            ax_curr,
+            stokes_profiles[col_idx],
+            show_scale=False,
+        )
         ax_curr.plot(
             xgrid,
             resp_real[col_idx],
@@ -642,6 +716,24 @@ for ax_curr, (K, Q) in zip(axes.ravel(), [(2, -2), (2, -1), (2, 1), (2, 2)]):
     dI_re, dQ_re, dU_re, dV_re = j_jacobian[(K, Q, "real")]
     dI_im, dQ_im, dU_im, dV_im = j_jacobian[(K, Q, "imag")]
 
+    add_stokes_profile_shading(
+        ax_curr,
+        Q0,
+        color="tab:blue",
+        profile_label="Q profile",
+        spine_offset=0,
+        fill_alpha=0.16,
+    )
+    add_stokes_profile_shading(
+        ax_curr,
+        U0,
+        color="tab:red",
+        profile_label="U profile",
+        spine_offset=55,
+        fill_alpha=0.0,
+        hatch="///",
+        line_style="--",
+    )
     ax_curr.plot(xgrid, dQ_re, color="tab:blue", label="dQ / d Re(J)")
     ax_curr.plot(xgrid, dQ_im, color="tab:blue", linestyle="--", label="dQ / d Im(J)")
     ax_curr.plot(xgrid, dU_re, color="tab:red", label="dU / d Re(J)")
@@ -655,7 +747,7 @@ for ax_curr, (K, Q) in zip(axes.ravel(), [(2, -2), (2, -1), (2, 1), (2, 2)]):
 
 fig.suptitle(
     f"Comparison of Real vs. Imaginary J^2_Q response functions (Stokes Q & U)\n"
-    f"Height h={hR_fixed_1D}, B0={B0_1D} G",
+    f"Height h={hR_fixed_1D}, B0={B0_1D} G, theta_B={np.degrees(theta_B):.1f} deg, chi_B={np.degrees(chi_B):.1f} deg",
     fontsize=13,
 )
 fig.savefig(f"RF_1D_J2Q_real_vs_imag_comparison_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png", dpi=300)

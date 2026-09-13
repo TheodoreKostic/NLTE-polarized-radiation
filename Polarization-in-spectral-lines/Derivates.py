@@ -960,3 +960,72 @@ def J_jacobian_finite_difference(
             jacobian[(key[0], key[1], part)] = (dI, dQ, dU, dV)
 
     return jacobian # seems to work well
+
+
+# Stack a fixed-B angle-perturbation response (theta_B or chi_B) over a B_array -> (n_B, n_x) maps.
+def response_vs_B_for_angle_perturbation(angle_fd_func, xgrid, jrad, B_array, **kwargs):
+    n_b, n_x = len(B_array), len(xgrid)
+    dI = np.zeros((n_b, n_x))
+    dQ = np.zeros((n_b, n_x))
+    dU = np.zeros((n_b, n_x))
+    dV = np.zeros((n_b, n_x))
+    I_arr = np.zeros((n_b, n_x))
+    Q_arr = np.zeros((n_b, n_x))
+    U_arr = np.zeros((n_b, n_x))
+    V_arr = np.zeros((n_b, n_x))
+
+    for ib, B_value in enumerate(B_array):
+        (
+            dI[ib], dQ[ib], dU[ib], dV[ib],
+            I_arr[ib], Q_arr[ib], U_arr[ib], V_arr[ib],
+        ) = angle_fd_func(xgrid=xgrid, jrad=jrad, B_value=B_value, **kwargs)
+
+    return dI, dQ, dU, dV, I_arr, Q_arr, U_arr, V_arr
+
+
+# Stack the J^K_Q Jacobian over a B_array -> {(K, Q, part): {"I","Q","U","V": (n_B, n_x)}}.
+def J_jacobian_vs_B(
+    xgrid,
+    jrad_base,
+    delta,
+    B_array,
+    theta_B,
+    chi_B,
+    theta_obs,
+    chi_obs,
+    gamma_obs,
+    q_u_reference_mode="fixed_gamma_rotate_qu_back",
+    gJu=1.0,
+    Aul=A_ul,
+    profile_kind="generalized",
+    a_value=None,
+    scheme="central",
+    normalize=None,
+    keys=None,
+):
+    n_b, n_x = len(B_array), len(xgrid)
+    maps = {}
+
+    for ib, B_value in enumerate(B_array):
+        hu_value = hanle_parameter_exact(B_value, gJu, Aul)
+        vH_value = _vH_from_B(B_value)
+        jacobian = J_jacobian_finite_difference(
+            xgrid, jrad_base, delta, hu_value, vH_value,
+            theta_B, chi_B, theta_obs, chi_obs, gamma_obs,
+            q_u_reference_mode=q_u_reference_mode, profile_kind=profile_kind,
+            a_value=a_value, scheme=scheme, normalize=normalize, keys=keys,
+        )
+        for key, (dI, dQ, dU, dV) in jacobian.items():
+            if key not in maps:
+                maps[key] = {
+                    "I": np.zeros((n_b, n_x)),
+                    "Q": np.zeros((n_b, n_x)),
+                    "U": np.zeros((n_b, n_x)),
+                    "V": np.zeros((n_b, n_x)),
+                }
+            maps[key]["I"][ib] = dI
+            maps[key]["Q"][ib] = dQ
+            maps[key]["U"][ib] = dU
+            maps[key]["V"][ib] = dV
+
+    return maps
