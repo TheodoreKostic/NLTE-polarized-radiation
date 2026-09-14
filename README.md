@@ -58,8 +58,8 @@ for polarized radiation field due to presence of magnetic field.
 `14. 09. 2026.`
 <ul>
   <li> Response functions for Stokes profiles with respect to magnetic field strength have been implemented and tested; WIP for a range of magnetic field strength perturbations. </li>
-  <li> Response functions with respect to magnetic field angles θ_B and χ_B have been implemented and tested, but more work is needed to fully validate them for pole case.</li>
-  <li> Response functions with respect to J^K_Q components have been implemented. Testing in progress. </li>
-  <li> 2D plots of response functions have been implemented for visualizing the dependence on magnetic field strength; WIP for visualizing the dependence on magnetic field angles and J^K_Q components. </li>
+  <li> Response functions with respect to magnetic field angles $\theta_B$ and $\chi_B$ have been implemented and tested, but more work is needed to fully validate them for pole case.</li>
+  <li> Response functions with respect to $J^K_Q$ components have been implemented. Testing in progress. </li>
+  <li> 2D plots of response functions have been implemented for visualizing the dependence on magnetic field strength; WIP for visualizing the dependence on magnetic field angles and $J^K_Q$ components. </li>
   <li> Future plans include transition to python JAX for improved performance and automatic differentiation capabilities. </li>
 </ul>
