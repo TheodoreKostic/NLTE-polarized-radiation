@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 
 script_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(script_dir)
+RESPONSE_PLOTS_DIR = os.path.join(script_dir, "Response_functions_plots")
+os.makedirs(RESPONSE_PLOTS_DIR, exist_ok=True)
 
 from functions_prt import wigner_D2, wigner_d2
 from Radiation_fun import *
@@ -77,7 +79,10 @@ def plot_2d_response_grid(maps, filename_tag, title):
         a.set_ylabel("B (G)")
         a.set_title(label)
     fig.suptitle(title)
-    fig.savefig(f"RF_2D_{filename_tag}_{geometry_tag}.png", dpi=300)
+    fig.savefig(
+        os.path.join(RESPONSE_PLOTS_DIR, f"RF_2D_{filename_tag}_{geometry_tag}.png"),
+        dpi=300,
+    )
     plt.close(fig)
 
 

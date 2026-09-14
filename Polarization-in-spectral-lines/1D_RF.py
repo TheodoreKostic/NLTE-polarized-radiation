@@ -7,6 +7,12 @@ import matplotlib.pyplot as plt
 
 script_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(script_dir)
+RESPONSE_PLOTS_DIR = os.path.join(script_dir, "Response_functions_plots")
+os.makedirs(RESPONSE_PLOTS_DIR, exist_ok=True)
+
+
+def response_plot_path(filename):
+    return os.path.join(RESPONSE_PLOTS_DIR, filename)
 
 from functions_prt import wigner_D2, wigner_d2
 from Radiation_fun import *
@@ -40,8 +46,8 @@ jrad_fixed = radiation_tensor(hR_fixed_1D)
 
 B0_1D = 5.69
 delta_B_1D = 0.2
-delta_theta_B_1D = np.radians(5.0)
-delta_chi_B_1D = np.radians(5.0)
+delta_theta_B_1D = np.radians(2.0)
+delta_chi_B_1D = np.radians(2.0)
 
 xgrid = np.linspace(-5.0, 5.0, 200)
 theta_B = np.pi/2 # np.pi/3
@@ -137,7 +143,7 @@ for a, resp, stokes, label in zip(
     a.grid(alpha=0.3)
 
 fig.suptitle(f"Response to B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_B={delta_B_1D} G")
-fig.savefig(f"RF_1D_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}.png"), dpi=300)
 plt.close(fig)
 
 dIdth, dQdth, dUdth, dVdth, *_ = theta_B_finite_difference_response_local(
@@ -250,7 +256,7 @@ for a, resp, stokes, label in zip(
     a.grid(alpha=0.3)
 
 fig.suptitle(f"Response to B, theta_B, chi_B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_B={delta_B_1D} G, delta_theta_B={int(np.degrees(delta_theta_B_1D))} deg, delta_chi_B={int(np.degrees(delta_chi_B_1D))} deg")
-fig.savefig(f"RF_1D_all_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}_delta_theta_B{int(np.degrees(delta_theta_B_1D))}_delta_chi_B{int(np.degrees(delta_chi_B_1D))}.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_all_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}_delta_theta_B{int(np.degrees(delta_theta_B_1D))}_delta_chi_B{int(np.degrees(delta_chi_B_1D))}.png"), dpi=300)
 plt.close(fig)
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
@@ -270,7 +276,7 @@ for a, resp_fd, resp_grad, stokes, label in zip(
     a.legend(fontsize=8)
 
 fig.suptitle(f"Response to B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_B={delta_B_1D} G: FD vs np.gradient")
-fig.savefig(f"RF_1D_compare_B_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_compare_B_h{hR_fixed_1D}_B0{B0_1D}_delta_B{delta_B_1D}.png"), dpi=300)
 plt.close(fig)
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
@@ -290,7 +296,7 @@ for a, resp_fd, resp_grad, stokes, label in zip(
     a.legend(fontsize=8)
 
 fig.suptitle(f"Response to theta_B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_theta_B={int(np.degrees(delta_theta_B_1D))} deg: FD vs np.gradient")
-fig.savefig(f"RF_1D_compare_theta_B_h{hR_fixed_1D}_B0{B0_1D}_delta_theta_B{int(np.degrees(delta_theta_B_1D))}deg.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_compare_theta_B_h{hR_fixed_1D}_B0{B0_1D}_delta_theta_B{int(np.degrees(delta_theta_B_1D))}deg.png"), dpi=300)
 plt.close(fig)
 
 fig, ax = plt.subplots(2, 2, figsize=(12, 8), constrained_layout=True)
@@ -310,7 +316,7 @@ for a, resp_fd, resp_grad, stokes, label in zip(
     a.legend(fontsize=8)
 
 fig.suptitle(f"Response to chi_B at fixed h={hR_fixed_1D}, B0={B0_1D} G, delta_chi_B={int(np.degrees(delta_chi_B_1D))} deg: FD vs np.gradient")
-fig.savefig(f"RF_1D_compare_chi_B_h{hR_fixed_1D}_B0{B0_1D}_delta_chi_B{int(np.degrees(delta_chi_B_1D))}deg.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_compare_chi_B_h{hR_fixed_1D}_B0{B0_1D}_delta_chi_B{int(np.degrees(delta_chi_B_1D))}deg.png"), dpi=300)
 plt.close(fig)
 
 common_limit = max(
@@ -585,7 +591,7 @@ fig.suptitle(
     f"chiB={np.degrees(chi_B):.1f} deg, thetaB={np.degrees(theta_B):.1f} deg"
 )
 fig.savefig(
-    f"RF_1D_comparison_{B0_1D}_{np.degrees(chi_B):.1f}_{np.degrees(theta_B):.1f}.png",
+    response_plot_path(f"RF_1D_comparison_{B0_1D}_{np.degrees(chi_B):.1f}_{np.degrees(theta_B):.1f}.png"),
     dpi=300,
 )
 plt.close(fig)
@@ -627,7 +633,7 @@ fig.suptitle(
     f"chiB={np.degrees(chi_B):.1f} deg, thetaB={np.degrees(theta_B):.1f} deg"
 )
 fig.savefig(
-    f"RF_1D_cartesian_path_response_{B0_1D}_{np.degrees(chi_B):.1f}_{np.degrees(theta_B):.1f}.png",
+    response_plot_path(f"RF_1D_cartesian_path_response_{B0_1D}_{np.degrees(chi_B):.1f}_{np.degrees(theta_B):.1f}.png"),
     dpi=300,
 )
 plt.close(fig)
@@ -707,7 +713,7 @@ fig.suptitle(
     f"Fixed h={hR_fixed_1D}, B0={B0_1D} G, theta_B={np.degrees(theta_B):.1f} deg, chi_B={np.degrees(chi_B):.1f} deg",
     fontsize=14,
 )
-fig.savefig(f"RF_1D_J_components_all_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_J_components_all_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png"), dpi=300)
 plt.close(fig)
 
 # Figure 2: Focused comparison highlighting Re vs Im differences for non-zero Q alignment terms (K=2)
@@ -750,7 +756,7 @@ fig.suptitle(
     f"Height h={hR_fixed_1D}, B0={B0_1D} G, theta_B={np.degrees(theta_B):.1f} deg, chi_B={np.degrees(chi_B):.1f} deg",
     fontsize=13,
 )
-fig.savefig(f"RF_1D_J2Q_real_vs_imag_comparison_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png", dpi=300)
+fig.savefig(response_plot_path(f"RF_1D_J2Q_real_vs_imag_comparison_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png"), dpi=300)
 plt.close(fig)
 
 print("Finished calculating and plotting response functions for all J components.")
