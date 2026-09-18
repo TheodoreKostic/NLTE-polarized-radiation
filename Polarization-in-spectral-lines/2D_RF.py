@@ -46,7 +46,7 @@ hR_2D = 0.073
 jrad_2D_test = radiation_tensor(hR_2D)
 
 xgrid = np.linspace(-5.0, 5.0, 200)
-theta_B = np.pi/2 
+theta_B = np.pi/2
 chi_B = 0.0
 theta_obs = np.pi/2
 chi_obs = 0.0
@@ -63,8 +63,12 @@ delta_J_2D = 1e-4
 
 STOKES_LABELS = ["I", "Q", "U", "V"]
 
-# ASCII tag for filenames; human-readable Greek/"=" form for suptitles
-geometry_tag = f"h_{hR_2D}_chi_B_{np.degrees(chi_B):.0f}_theta_B_{np.degrees(theta_B):.0f}"
+RUN_PLOTS_DIR_2D = os.path.join(
+    RESPONSE_PLOTS_DIR,
+    f"RF_2D_theta_B_{np.degrees(theta_B):.0f}_chi_B_{np.degrees(chi_B):.0f}",
+)
+os.makedirs(RUN_PLOTS_DIR_2D, exist_ok=True)
+
 geometry_title = f"h = {hR_2D}, χ_B = {np.degrees(chi_B):.0f}°, θ_B = {np.degrees(theta_B):.0f}°"
 
 
@@ -80,7 +84,7 @@ def plot_2d_response_grid(maps, filename_tag, title):
         a.set_title(label)
     fig.suptitle(title)
     fig.savefig(
-        os.path.join(RESPONSE_PLOTS_DIR, f"RF_2D_{filename_tag}_{geometry_tag}.png"),
+        os.path.join(RUN_PLOTS_DIR_2D, f"RF_2D_{filename_tag}.png"),
         dpi=300,
     )
     plt.close(fig)
