@@ -37,6 +37,7 @@ from Derivates import (
     stokes_from_field_angles,
     theta_B_finite_difference_response_local,
 )
+from Special_cases import make_case_list
 
 # ---------------------------------------------------------
 # 1D response profiles at a single fixed height (fixed jrad)
@@ -759,5 +760,121 @@ fig.suptitle(
 fig.savefig(response_plot_path(f"RF_1D_J2Q_real_vs_imag_comparison_h{hR_fixed_1D}_B0{B0_1D}_thetaB{np.degrees(theta_B):.1f}_chiB{np.degrees(chi_B):.1f}.png"), dpi=300)
 plt.close(fig)
 
+# ---------------------------------------------------------
+# dU/dB grid: rows = B0 values, columns = delta_B values,
+# repeated for each field-orientation case in a given case list
+# ---------------------------------------------------------
+B0_grid_values = [5.69, 12, 30, 60]
+delta_B_grid_values = [0.01, 0.05, 0.1, 1, 3]
+
+
+def plot_dUdB_grid(theta_case, chi_case, case_name, case_label):
+    fig, axes = plt.subplots(4, 5, figsize=(24, 16), constrained_layout=True, sharex=True)
+    for row_idx, B0_test in enumerate(B0_grid_values):
+        for col_idx, delta_B_test in enumerate(delta_B_grid_values):
+            _, _, dUdB_test, _, _, _, U0_test, _ = B_finite_difference_response_local(
+                xgrid=xgrid,
+                jrad=jrad_fixed,
+                B0=B0_test,
+                delta_B=delta_B_test,
+                theta_B=theta_case,
+                chi_B=chi_case,
+                theta_obs=theta_obs,
+                chi_obs=chi_obs,
+                gamma_obs=gamma_obs,
+                q_u_reference_mode=Q_U_REFERENCE_MODE,
+                profile_kind=profile_kind,
+                scheme="central",
+                normalize=None,
+            )
+
+            ax_curr = axes[row_idx, col_idx]
+            show_scale = col_idx == len(delta_B_grid_values) - 1
+            add_stokes_profile_shading(
+                ax_curr,
+                U0_test,
+                show_scale=show_scale,
+                profile_label="U profile",
+            )
+            ax_curr.plot(xgrid, dUdB_test, color="tab:blue", linewidth=1.8)
+            ax_curr.set_title(f"B0={B0_test} G, delta_B={delta_B_test} G", fontsize=10)
+            ax_curr.grid(alpha=0.3)
+
+            if row_idx == 3:
+                ax_curr.set_xlabel("Reduced frequency x")
+            if col_idx == 0:
+                ax_curr.set_ylabel("dU/dB")
+
+    theta_case_deg = np.degrees(theta_case)
+    chi_case_deg = np.degrees(chi_case)
+    fig.suptitle(
+        f"dU/dB vs reduced frequency, fixed h={hR_fixed_1D}, case: {case_name} ({case_label}), "
+        f"theta_B={theta_case_deg:.1f} deg, chi_B={chi_case_deg:.1f} deg"
+    )
+    fig.savefig(
+        response_plot_path(
+            f"RF_1D_diffB_U_testing_{case_name}_thetaB{theta_case_deg:.1f}_chiB{chi_case_deg:.1f}.png"
+        ),
+        dpi=300,
+    )
+    plt.close(fig)
+
+
+for special_case in make_case_list(theta_obs):
+    plot_dUdB_grid(
+        special_case["theta_B"],
+        special_case["chi_B"],
+        special_case["case"],
+        special_case["description"],
+    )
+
+for theta_case, chi_case, case_label in geometry_tests:
+    plot_dUdB_grid(
+        theta_case,
+        chi_case,
+        case_label.replace(" ", "_"),
+        case_label,
+    )
+
 print("Finished calculating and plotting response functions for all J components.")
 
+# ---------------------------------------------------------
+# delta_B convergence study: reveals the delta_B range where the
+# central-difference dU/dB estimate is actually affected by the step size
+# (truncation error at large delta_B, floating-point noise at tiny delta_B)
+# ---------------------------------------------------------
+delta_B_scan = np.logspace(-8, 1, 60)
+delta_B_reference = 1e-4  # deep in the well-converged plateau
+
+fig, ax = plt.subplots(figsize=(9, 6))
+for B0_test in B0_grid_values:
+    _, _, dUdB_ref, _, *_ = B_finite_difference_response_local(
+        xgrid=xgrid, jrad=jrad_fixed, B0=B0_test, delta_B=delta_B_reference,
+        theta_B=theta_B, chi_B=chi_B, theta_obs=theta_obs, chi_obs=chi_obs,
+        gamma_obs=gamma_obs, q_u_reference_mode=Q_U_REFERENCE_MODE,
+        profile_kind=profile_kind, scheme="central", normalize=None,
+    )
+
+    errors = np.empty_like(delta_B_scan)
+    for i, delta_B_test in enumerate(delta_B_scan):
+        _, _, dUdB_test, _, *_ = B_finite_difference_response_local(
+            xgrid=xgrid, jrad=jrad_fixed, B0=B0_test, delta_B=delta_B_test,
+            theta_B=theta_B, chi_B=chi_B, theta_obs=theta_obs, chi_obs=chi_obs,
+            gamma_obs=gamma_obs, q_u_reference_mode=Q_U_REFERENCE_MODE,
+            profile_kind=profile_kind, scheme="central", normalize=None,
+        )
+        errors[i] = np.max(np.abs(dUdB_test - dUdB_ref))
+
+    ax.loglog(delta_B_scan, errors, marker="o", markersize=3, label=f"B0={B0_test} G")
+
+ax.set_xlabel("delta_B (G)")
+ax.set_ylabel(f"max |dU/dB(delta_B) - dU/dB(delta_B={delta_B_reference:g})|")
+ax.set_title(
+    f"Central-difference convergence for dU/dB, fixed h={hR_fixed_1D}, "
+    f"theta_B={np.degrees(theta_B):.1f} deg, chi_B={np.degrees(chi_B):.1f} deg"
+)
+ax.grid(alpha=0.3, which="both")
+ax.legend(fontsize=9)
+fig.tight_layout()
+fig.savefig(response_plot_path("RF_1D_deltaB_convergence.png"), dpi=300)
+plt.close(fig)
