@@ -2,6 +2,7 @@ import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 script_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(script_dir)
@@ -61,6 +62,13 @@ LABEL_TEX = {
 # Combined overplot figure: (B [G], chi_B [deg]) cases, one figure per theta_B.
 COMBINED_CASES = [(0.91, 0.0), (5.69, 0.0), (5.69, 90.0), (5.69, 180.0), (18.0, 45.0)]
 COMBINED_THETA_B_DEG = [90.0, 60.0, 45.0, 30.0]
+COMBINED_STRENGTHS_B_GAUSS = [0.0, 1.0, 2.0, 4.0, 10.0, 20.0, 50.0]
+COMBINED_STRENGTHS_CHI_B_DEG = [0.0, 90.0, 180.0, -45.0, 0.0, 90.0, 180.0]
+HU_GRID_STRENGTH = np.geomspace(
+    1e-6,
+    hanle_parameter_exact(COMBINED_STRENGTHS_B_GAUSS[-1], GJU, A_ul),
+    400,
+)
 ABSORPTION_SCALE = 3.0
 
 THETA_OBS_DEG_CASES = [90.0, 60.0]
@@ -116,7 +124,9 @@ def plot_hanle(ax, jrad, theta_B, chi_B, theta_obs, hu):
     ax.legend(loc="upper right", fontsize=7)
 
 
-def make_combined_figure(j00, j20, theta_B, theta_obs, a_voigt):
+def make_combined_figure(
+    j00, j20, theta_B, theta_obs, a_voigt, cases=COMBINED_CASES, name_tag=""
+):
     jrad = make_jrad(j00, j20)
     fig = plt.figure(figsize=(14, 8))
     gs = fig.add_gridspec(3, 2, width_ratios=[1, 1.5])
@@ -124,7 +134,7 @@ def make_combined_figure(j00, j20, theta_B, theta_obs, a_voigt):
     ax_h = fig.add_subplot(gs[:, 1])
     point = draw_hanle_grid(ax_h, jrad, theta_B, theta_obs)
 
-    for k, (b_gauss, chi_deg) in enumerate(COMBINED_CASES):
+    for k, (b_gauss, chi_deg) in enumerate(cases):
         color = f"C{k}"
         chi_B = np.radians(chi_deg)
         hu_k = hanle_parameter_exact(b_gauss, GJU, A_ul)
@@ -157,7 +167,114 @@ def make_combined_figure(j00, j20, theta_B, theta_obs, a_voigt):
     fig.tight_layout()
     path = os.path.join(
         OUT_DIR,
-        f"Overview_combined_thetaObs{fmt_num(np.degrees(theta_obs), 4)}_"
+        f"Overview_combined{name_tag}_thetaObs{fmt_num(np.degrees(theta_obs), 4)}_"
+        f"thetaB{fmt_num(np.degrees(theta_B), 4)}.png",
+    )
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+    print("Saved:", path)
+
+
+def make_strength_sweep_figure(j00, j20, theta_B, theta_obs, a_voigt):
+    jrad = make_jrad(j00, j20)
+    colors = plt.get_cmap("tab10")(np.linspace(0.0, 1.0, len(COMBINED_STRENGTHS_B_GAUSS)))
+    fig = plt.figure(figsize=(14, 8))
+    gs = fig.add_gridspec(3, 2, width_ratios=[1, 1.5])
+    axes_s = [fig.add_subplot(gs[i, 0]) for i in range(3)]
+    ax_h = fig.add_subplot(gs[:, 1])
+
+    def point(hu_value, chi_value):
+        return hanle_point_pq_pu(
+            hu_value, jrad, theta_B, chi_value, theta_obs, CHI_OBS,
+            GAMMA_OBS, USE_Q_U_REFERENCE_MODE,
+        )
+
+    chi_guide_endpoints = []
+    for chi_index, chi_deg in enumerate(CHI_CONST_DEG_SOLID):
+        pq, pu = zip(*[
+            point(hu_value, np.radians(chi_deg))
+            for hu_value in HU_GRID_STRENGTH
+        ])
+        ax_h.plot(pu, pq, "k-", lw=0.7, alpha=0.75, zorder=1)
+        chi_guide_endpoints.append((chi_deg, pu[-1], pq[-1]))
+
+    b_legend_handles = []
+    dot_legend_handles = []
+    b_legend_handles = []
+    for b_index, (b_gauss, color) in enumerate(zip(COMBINED_STRENGTHS_B_GAUSS, colors)):
+        hu_value = hanle_parameter_exact(b_gauss, GJU, A_ul)
+        vH = 1.3996e6 * b_gauss / default_Delta_nu_D
+        phi = build_phi_table(XGRID, PROFILE_KIND, vH, a_voigt)
+        chi_deg = COMBINED_STRENGTHS_CHI_B_DEG[b_index]
+        chi_B = np.radians(chi_deg)
+
+        chi_curve = [point(hu_value, chi_value) for chi_value in CHI_GRID_DASHED]
+        pq_curve, pu_curve = zip(*chi_curve)
+        if b_gauss == 0.0:
+            ax_h.plot(pu_curve[0], pq_curve[0], "--", color=color, lw=1.5,
+                      label=rf"$B={b_gauss:g}$ G", zorder=3)
+        else:
+            ax_h.plot(pu_curve, pq_curve, "--", color=color, lw=1.5,
+                      label=rf"$B={b_gauss:g}$ G", zorder=3)
+
+        b_legend_handles.append(
+            Line2D([0], [0], color=color, lw=2, linestyle="--", label=rf"$B={b_gauss:g}$ G")
+        )
+
+        state = prepare_magnetic_branch_state(
+            jrad=jrad, hu=hu_value, theta_B=theta_B, chi_B=chi_B,
+            theta_obs=theta_obs, chi_obs=CHI_OBS, gamma_obs=GAMMA_OBS,
+            q_u_reference_mode=USE_Q_U_REFERENCE_MODE,
+        )
+        I, Q, U, _ = compute_stokes_profiles(XGRID, phi, state)
+        lab = rf"$B={b_gauss:g}$ G, $\chi_B={chi_deg:.1f}^\circ$"
+        for ax, profile in zip(axes_s, (1.0 - ABSORPTION_SCALE * I, Q, U)):
+            ax.plot(XGRID, profile, color=color, lw=1.2, label=lab)
+
+        pQ, pU = point(hu_value, chi_B)
+        ax_h.plot(pU, pQ, "o", color=color, mec="k", mew=0.5, ms=6, zorder=5)
+        dot_legend_handles.append(
+            Line2D(
+                [0], [0], marker="o", color="none", markerfacecolor=color,
+                markeredgecolor="k", markersize=5,
+                label=rf"$B={b_gauss:g}$ G, $\chi_B={chi_deg:g}^\circ$",
+            )
+        )
+
+    for chi_deg, pu_endpoint, pq_endpoint in chi_guide_endpoints:
+        ax_h.annotate(
+            rf"${chi_deg}^\circ$", (pu_endpoint, pq_endpoint), fontsize=7,
+            xytext=(3, 3), textcoords="offset points",
+        )
+
+    for ax, name in zip(axes_s, (r"$I$", r"$Q$", r"$U$")):
+        ax.set_ylabel(name)
+        ax.grid(alpha=0.3)
+        ax.legend(loc="upper right" if name == r"$U$" else "best", fontsize=6)
+    axes_s[-1].set_xlabel(r"Reduced frequency $x$")
+    ax_h.set_xlabel(r"$\tilde{p}_U$")
+    ax_h.set_ylabel(r"$\tilde{p}_Q$")
+    ax_h.set_title("Hanle diagram")
+    ax_h.grid(alpha=0.3)
+    ax_h.set_aspect("equal", adjustable="datalim")
+    b_legend = ax_h.legend(
+        handles=b_legend_handles, loc="upper right", fontsize=6, framealpha=0.9
+    )
+    ax_h.add_artist(b_legend)
+    ax_h.legend(
+        handles=dot_legend_handles, loc="upper right", bbox_to_anchor=(1.0, 0.68),
+        fontsize=6, framealpha=0.9,
+    )
+
+    fig.suptitle(
+        rf"$J^0_0={j00:g}$, $J^2_0={j20:g}$ | "
+        rf"$\theta_B={np.degrees(theta_B):.1f}^\circ$, "
+        rf"$\theta_{{obs}}={np.degrees(theta_obs):.1f}^\circ$"
+    )
+    fig.tight_layout(rect=(0, 0.15, 1, 0.96))
+    path = os.path.join(
+        OUT_DIR,
+        f"Overview_combined_Bstrengths_thetaObs{fmt_num(np.degrees(theta_obs), 4)}_"
         f"thetaB{fmt_num(np.degrees(theta_B), 4)}.png",
     )
     fig.savefig(path, dpi=200)
@@ -222,6 +339,10 @@ def main():
     for theta_obs_deg in THETA_OBS_DEG_CASES:
         for th_b_deg in COMBINED_THETA_B_DEG:
             make_combined_figure(
+                *j_cases[-1], np.radians(th_b_deg),
+                np.radians(theta_obs_deg), a_voigt,
+            )
+            make_strength_sweep_figure(
                 *j_cases[-1], np.radians(th_b_deg),
                 np.radians(theta_obs_deg), a_voigt,
             )
