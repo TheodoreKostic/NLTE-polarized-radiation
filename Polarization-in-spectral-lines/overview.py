@@ -243,8 +243,10 @@ def make_strength_sweep_figure(j00, j20, theta_B, theta_obs, a_voigt):
 
     for chi_deg, pu_endpoint, pq_endpoint in chi_guide_endpoints:
         ax_h.annotate(
-            rf"${chi_deg}^\circ$", (pu_endpoint, pq_endpoint), fontsize=7,
-            xytext=(3, 3), textcoords="offset points",
+            rf"${chi_deg}^\circ$", (pu_endpoint, pq_endpoint),
+            fontsize=8, fontweight="bold",
+            xytext=(4, 4), textcoords="offset points",
+            bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.85, "pad": 0.5},
         )
 
     for ax, name in zip(axes_s, (r"$I$", r"$Q$", r"$U$")):
