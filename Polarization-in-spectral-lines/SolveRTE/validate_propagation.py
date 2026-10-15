@@ -1,6 +1,6 @@
 """Validation of the grid propagation matrix (eta, rho) and emissivity, including Stokes V.
 
-Run:  MPLBACKEND=Agg PYTHONPATH=.:.. python validate_propagation.py
+Run:  MPLBACKEND=Agg python validate_propagation.py
 Known cases used:
   1. B = 0: eta_I = eta0 * Voigt, nothing else.
   2. Zeeman triplet (LL04 Eq. 9.x): eta_{I,Q,U,V} and rho_{Q,U,V} for arbitrary (theta, chi).

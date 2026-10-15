@@ -15,8 +15,9 @@ import sys
 import numpy as np
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
-for _p in (_HERE, _ROOT):
+_PARENT = os.path.dirname(_HERE)
+_ROOT = os.path.dirname(_PARENT)
+for _p in (_HERE, _PARENT, _ROOT):
     if _p not in sys.path:
         sys.path.append(_p)
 
