@@ -29,7 +29,7 @@ NU0 = 4.3e14
 LINE = LineModel(NU0, A_ul, S.GJU, S.GJU, 1, 0, 40)
 VMIC = default_Delta_nu_D * C_LIGHT / NU0  # with T ~ 0 this gives Delta nu_D = 4e9 exactly
 X = S.XGRID
-NU = X * default_Delta_nu_D
+NU = -X * default_Delta_nu_D  # nu - nu0, since Special_cases x = (nu0 - nu)/dnu_D
 SCALE = phi00_norm() * default_Delta_nu_D / eta0(LINE, 1.0) * np.sqrt(np.pi)
 
 jrad = radiation_tensor(hR=S.HP)
@@ -39,7 +39,7 @@ for q in range(-2, 3):
     JKQ[2, q + 2] = jrad[(2, q)]
 
 a_voigt = damping_parameter()
-cache, worst = {}, 0.0
+cache, worst, worst_v = {}, 0.0, 0.0
 for obs_label, th_obs in S.observer_theta_cases().items():
     cases = S.make_case_list(th_obs)
     fig, axes = plt.subplots(len(cases), 4, figsize=(15, 10), sharex=True)
@@ -54,8 +54,9 @@ for obs_label, th_obs in S.observer_theta_cases().items():
         worst = max(worst, err_iqu)
         vmax = np.abs(ref[3]).max()
         if vmax > 1e-12:
-            errv = np.abs(mine[3] - np.sqrt(2) * ref[3]).max() / np.abs(mine[3]).max()
-            print(f"    V: |V_mine - sqrt(2) V_ref| / max|V_mine| = {errv:.1e}")
+            errv = np.abs(mine[3] - ref[3]).max() / vmax
+            worst_v = max(worst_v, errv)
+            print(f"    V: max|V_mine - V_ref| / max|V_ref| = {errv:.1e}")
         print(f"{obs_label:15s} {cfg['case']:28s} Hu={hu:.3f}  max|dI,Q,U|/max I = {err_iqu:.1e}"
               f"   max|V_ref|={np.abs(ref[3]).max():.1e}  max|V_mine|={np.abs(mine[3]).max():.1e}")
         for c, nm in enumerate("IQUV"):
@@ -70,4 +71,4 @@ for obs_label, th_obs in S.observer_theta_cases().items():
     fig.savefig(f"validate_special_cases_{obs_label}.png", dpi=100)
     plt.close(fig)
 
-print(f"\nworst relative I,Q,U difference: {worst:.1e}")
+print(f"\nworst relative I,Q,U difference: {worst:.1e};  V (where nonzero): {worst_v:.1e}")

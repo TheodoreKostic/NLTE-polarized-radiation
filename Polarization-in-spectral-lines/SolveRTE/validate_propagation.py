@@ -20,8 +20,8 @@ NU0, DND = 4.3e14, 4e9
 LINE = LineModel(NU0, 5e7, 1.0, 1.0, 1, 0, 40)
 VMIC = DND * C_LIGHT / NU0
 A_DAMP = LINE.A_ul / (4 * np.pi * DND)
-X = np.linspace(-8, 8, 1601)
-NU = X * DND
+X = np.linspace(-8, 8, 1601)  # x = (nu0 - nu)/dnu_D (LL04 convention, as in Phi_generalized)
+NU = -X * DND  # physical offset nu - nu0
 MU, PHI = np.array([1.0]), np.array([0.0])
 AMP = eta0(LINE, 1.0) / DND
 ZERO_J = np.zeros((3, 5), complex)
@@ -41,10 +41,10 @@ def run(B, th, chi, J=ZERO_J, C_ul=0.0, T=1e-12, gamma=0.0):
 
 
 def triplet(B, th, chi):
-    """LL04 normal-Zeeman-triplet eta, rho (units eta0/dnu_D); b/r assigned as M=+1/-1 shifts."""
+    """LL04 normal-Zeeman-triplet eta, rho (units eta0/dnu_D); b/r assigned as M=-1/+1 shifts."""
     vH = NU_LARMOR * B / DND
     w = lambda M: wofz(X - M * vH + 1j * A_DAMP) / np.sqrt(np.pi)
-    wp, wb, wr = w(0), w(1), w(-1)  # blue component = M=+1 shift (sign fixed by weak-field V)
+    wp, wb, wr = w(0), w(-1), w(1)
     s, c = np.sin(th), np.cos(th)
     d_lin = lambda f: f(wp) - 0.5 * (f(wb) + f(wr))
     out = []
@@ -63,7 +63,7 @@ _, eta = run(0.0, 0.3, 0.2)
 phi0 = wofz(X + 1j * A_DAMP).real / np.sqrt(np.pi)
 check("B=0: eta_I - Voigt", np.abs(eta[0] - phi0).max() / phi0.max(), 1e-12)
 check("B=0: polarisation absent", np.abs(eta[1:]).max(), 1e-12)
-check("B=0: int eta_I dnu / eta0", abs(np.trapezoid(eta[0], NU) / DND - 1) , 2e-3)
+check("B=0: int eta_I dnu / eta0", abs(abs(np.trapezoid(eta[0], NU)) / DND - 1) , 2e-3)
 
 # 2. Zeeman triplet, all seven components, many geometries
 worst = 0.0
