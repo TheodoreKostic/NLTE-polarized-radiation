@@ -49,10 +49,6 @@ def tensor_basis_angles(theta, chi, gamma=0.0):
             for Q in QS:
                 if abs(Q) <= K:
                     basis[i, K, Q + 2] = T(i, K, int(Q), theta, chi, gam)
-    # Radiation_fun uses sqrt(3)/2 for T^1_0(V); LL04 Table 5.6 gives sqrt(3/2) cos(theta)
-    basis[3, 1, 2] = np.sqrt(1.5) * np.cos(theta)
-    # sign fixed so that weak-field V = +nu_L B cos(theta) dI/dnu (LL04 Eq. 9.x, B towards observer)
-    basis[3, 1] *= -1.0
     return basis
 
 

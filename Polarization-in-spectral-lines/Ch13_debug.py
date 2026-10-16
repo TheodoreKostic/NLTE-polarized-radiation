@@ -54,7 +54,7 @@ def T(i, K, Q, theta, chi, gamma):
 
     if i == 3:
         if K == 1 and Q == 0:
-            return sqrt3/2 * ct
+            return sqrt3/sqrt2 * ct  # sqrt(3/2) cos(theta), LL04 Table 5.6
         if K == 1 and Q == 1:
             return -sqrt3/2 * st * ex1
 

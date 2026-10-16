@@ -177,7 +177,8 @@ def point_emission_and_propagation(
     eta = np.zeros((7, nnu, nmu, nphi))
 
     for im, m in enumerate(mu):
-        x = (nu - line.nu0 * v_los * m / C_LIGHT) / dnu_D
+        # nu is the offset nu - nu0; Phi uses LL04's reduced frequency x = (nu0 - nu_shifted)/dnu_D
+        x = (-nu + line.nu0 * v_los * m / C_LIGHT) / dnu_D
         tab = phi_table(x, vH, a)  # [3, 3, 5, nx]
         # absorption-like K=0 block: sum_K' Phi^0_{0K'}(x) T^K'_0(i); [4, nx, nphi]
         absorb = np.einsum("kx,ikp->ixp", tab[0, :, 2], basis[:, :, 2, im])
