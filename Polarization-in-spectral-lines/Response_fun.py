@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 script_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(script_dir)
 
-from functions_prt import wigner_D2
+from Old.functions_prt import wigner_D2
 from Radiation_fun import T, idx, Jrad_to_array, radiation_tensor
 from Hanle_fun import hanle_parameter_exact
 from Profile_fun import (

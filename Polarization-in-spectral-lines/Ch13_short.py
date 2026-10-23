@@ -3,13 +3,13 @@ import matplotlib.pyplot as plt
 import sys
 import os
 
-# Add the directory containing functions_prt.py to the Python path
+# Add the repository root, which contains Old/functions_prt.py, to the Python path
 
 script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 # script_dir = os.path.abspath("/home/teodor/Documents/Code/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
-from functions_prt import short_characteristics
+from Old.functions_prt import short_characteristics
 
 # Allen (1973) limb darkening coefficients for the Sun
 # for biquadratic law: I(μ)/I(1) = 1 - u1*(1-μ) - u2*(1-μ)^2

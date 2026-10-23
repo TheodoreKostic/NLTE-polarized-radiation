@@ -8,7 +8,7 @@ script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 #script_dir = os.path.abspath("/home/mistflow/Documents/Doktorat/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
-from functions_prt import wigner_D2, wigner_d2
+from Old.functions_prt import wigner_D2, wigner_d2
 from Radiation_fun import *
 from Hanle_fun import *
 from Profile_fun import *

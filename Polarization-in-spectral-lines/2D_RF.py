@@ -10,7 +10,7 @@ sys.path.append(script_dir)
 RESPONSE_PLOTS_DIR = os.path.join(script_dir, "Response_functions_plots")
 os.makedirs(RESPONSE_PLOTS_DIR, exist_ok=True)
 
-from functions_prt import wigner_D2, wigner_d2
+from Old.functions_prt import wigner_D2, wigner_d2
 from Radiation_fun import *
 from Hanle_fun import *
 from Profile_fun import *
