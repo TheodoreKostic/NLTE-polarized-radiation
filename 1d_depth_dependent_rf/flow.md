@@ -6,7 +6,7 @@
 
 We know the structure of the atmosphere in thermodynamic parameters: $T, p, \vec{v}, \vec{B}$. Also $\rho$, if needed (can be inferred from EOS).
 
-Given SNAPI or even better Lightweaver, we can calculate the lower level population of the line, continuum opacity, damping coefficient $a$, scattering probability $\epsilon$, and anisotropy $J_Q^K$ (or course in 1D case it will be only 00, and 02).
+Given SNAPI or even better Lightweaver, we can calculate the lower level population of the line, continuum opacity, damping coefficient $a$, scattering probability $\epsilon$, and anisotropy $J_Q^K$ (or course in 1D case it will be only 00, and 02). This anisotropy is in general case depth-dependent. 
 
 Flow:
 
