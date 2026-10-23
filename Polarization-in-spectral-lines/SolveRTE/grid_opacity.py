@@ -32,7 +32,7 @@ for _p in (_HERE, _PARENT, _ROOT):
     if _p not in sys.path:
         sys.path.append(_p)
 
-from functions_prt import wigner_D2  # noqa: E402
+from Old.functions_prt import wigner_D2  # noqa: E402
 from Profile_fun import W3  # noqa: E402
 from atmosphere import C_LIGHT, K_B  # noqa: E402
 from grid_tensors import QS, tensor_basis_angles  # noqa: E402

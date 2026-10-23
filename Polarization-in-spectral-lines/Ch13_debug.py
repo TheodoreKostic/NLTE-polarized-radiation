@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
-from functions_prt import wigner_D2
+from Old.functions_prt import wigner_D2
 
 sqrt2 = np.sqrt(2.0)
 sqrt3 = np.sqrt(3.0)
