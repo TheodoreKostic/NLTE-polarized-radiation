@@ -3,8 +3,8 @@ import sys
 import os
 import matplotlib.pyplot as plt
 
-#script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
-script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
+script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
+#script_dir = os.path.abspath("/home/teodor/Documents/Codes/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
 from Old.functions_prt import wigner_D2, wigner_d2
@@ -110,8 +110,9 @@ def hanle_polarization_corrected(
     """
     #print("\nJarr entering hanle_polarization_corrected")
 
-    Jarr = Jrad_to_array(Jrad)
-
+    Jarr = Jrad_to_array(J_rad)
+    #print()
+    #print("ENTERING FUNCTION")
     #for Q in [-2,-1,0,1,2]:
     #    print(Q, Jarr[idx(Q)])
     
@@ -152,7 +153,7 @@ def hanle_polarization_corrected(
 
     for i, Q in enumerate(Qs):
 
-        rho = rho20[idx(Q)]
+        rho = rho20[idx(-Q)]
 
         phase = (-1.0)**Q
 
@@ -167,7 +168,6 @@ def hanle_polarization_corrected(
 
     pQ = np.real(epsQ / epsI)
     pU = np.real(epsU / epsI)
-
     return pQ, pU
 
 # Numerical approach
@@ -2506,7 +2506,9 @@ print(epsQ)
 print(epsU)
 
 print("---------")
-hR = 0.073
+delta = np.radians(30.0)
+hp = 0.073      # projected height from Fig. 13.3
+hR = (1 + hp)/np.cos(delta) - 1
 J0 = radiation_tensor_delta(hR, np.radians(0))
 J30 = radiation_tensor_delta(hR, np.radians(30))
 Jm30 = radiation_tensor_delta(hR, np.radians(-30.0))
@@ -2837,7 +2839,7 @@ plt.plot(U30,Q30,label="+30")
 plt.plot(Um30,Qm30,label="-30")
 plt.legend()
 plt.savefig("Test_plusminus.png", dpi = 300)
-
+'''
 def tP_observer(i):
 
     t = {}
@@ -3152,3 +3154,4 @@ plt.suptitle(
 
 plt.tight_layout()
 plt.savefig("Hanle_T.png")
+'''
