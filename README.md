@@ -63,3 +63,14 @@ for polarized radiation field due to presence of magnetic field.
   <li> 2D plots of response functions have been implemented for visualizing the dependence on magnetic field strength; WIP for visualizing the dependence on magnetic field angles and $J^K_Q$ components. </li>
   <li> Future plans include transition to python JAX for improved performance and automatic differentiation capabilities. </li>
 </ul>
+
+# Future work
+
+`27. 10. 2026.`
+<ul>
+  <li> Note: LL04 basic two-level-atom that can compute emission Stokes profiles at fixed
+  height above the solar limb, for arbitrary orientation of the magnetic field and observer.</li>
+  <li>Use grid-based approach for solving 1D radiative transfer equation with polarized light.</li>
+  <li>Implement local response functions for $\vec{B}$ (magnetic field vector) and its components.</li>
+  <li>Propagate that local response through RTE-solver to obtain global response.</li>
+</ul>
