@@ -3,13 +3,13 @@ from sympy.physics.wigner import wigner_d_small
 import sys
 import os
 import matplotlib.pyplot as plt
-# Add the directory containing functions_prt.py to the Python path
+# Add the repository root, which contains Old/functions_prt.py, to the Python path
 
 script_dir = os.path.abspath("/home/Code/NLTE-polarized-radiation")
 # script_dir = os.path.abspath("/home/teodor/Documents/Code/NLTE-polarized-radiation")
 sys.path.append(script_dir)
 
-from functions_prt import wigner_d2, wigner_D2
+from Old.functions_prt import wigner_d2, wigner_D2
 from Ch13_short import anisotropy_w2, anisotropy
 
 sqrt2 = np.sqrt(2.0)

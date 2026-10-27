@@ -23,7 +23,7 @@ def _run_plots_dir():
 def response_plot_path(filename):
     return os.path.join(_run_plots_dir(), filename)
 
-from functions_prt import wigner_D2, wigner_d2
+from Old.functions_prt import wigner_D2, wigner_d2
 from Radiation_fun import *
 from Hanle_fun import *
 from Profile_fun import *

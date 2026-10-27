@@ -1,7 +1,12 @@
 import sys
+import os
 import numpy as np
 
-from functions_prt import wigner_D2, wigner_d2
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+from Old.functions_prt import wigner_D2, wigner_d2
 from Radiation_fun import *
 from Hanle_fun import *
 from Profile_fun import *

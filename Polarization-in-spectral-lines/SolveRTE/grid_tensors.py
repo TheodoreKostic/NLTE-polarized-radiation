@@ -1,6 +1,6 @@
 """Tensor machinery for the grid: J^K_Q from Stokes, Hanle/collisions, emissivity.
 
-Builds on the existing T (Radiation_fun.py) and wigner_D2 (functions_prt.py).
+Builds on the existing T (Radiation_fun.py) and wigner_D2 (Old/functions_prt.py).
 Everything is expressed in the vertical (local) reference frame, where the ray
 direction is (theta, chi) = (arccos(mu), phi) and gamma is the angle of the
 Stokes-Q reference axis (gamma = 0 means Q is along the projection of the
@@ -21,7 +21,7 @@ for _p in (_HERE, _PARENT, _ROOT):
     if _p not in sys.path:
         sys.path.append(_p)
 
-from functions_prt import wigner_D2  # noqa: E402
+from Old.functions_prt import wigner_D2  # noqa: E402
 from Radiation_fun import T  # noqa: E402
 from Hanle_fun import hanle_parameter  # noqa: E402
 
