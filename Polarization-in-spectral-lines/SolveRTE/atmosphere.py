@@ -30,7 +30,7 @@ class Atmosphere1D:
     B: np.ndarray
     theta_B: np.ndarray
     chi_B: np.ndarray
-    v_los: np.ndarray
+    v_los: np.ndarray      # velocity [cm/s]; profile center shift is nu0*v_los*mu/c
     D2: np.ndarray        # depolarizing collision rate of the upper level [1/s]
     C_ul: np.ndarray      # inelastic de-excitation rate [1/s]
     vmic: np.ndarray = None
@@ -102,8 +102,10 @@ class Grid:
         w_phi = np.full(n_phi, 2 * np.pi / n_phi)
 
         dnu = line.doppler_width(atm.T.max(), atm.vmic.max())
-        nu = np.linspace(-nu_max_doppler, nu_max_doppler, n_nu) * dnu
+        nu_extent = nu_max_doppler * dnu + line.nu0 * np.max(np.abs(atm.v_los)) / C_LIGHT
+        nu = np.linspace(-nu_extent, nu_extent, n_nu)
         w_nu = np.full(n_nu, nu[1] - nu[0])
+        w_nu[[0, -1]] *= 0.5
         return cls(atm, line, mu, w_mu, phi, w_phi, nu, w_nu)
 
     def allocate(self):

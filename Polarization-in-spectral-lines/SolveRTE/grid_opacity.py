@@ -23,7 +23,6 @@ import sys
 from functools import lru_cache
 
 import numpy as np
-from scipy.special import wofz
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
@@ -36,6 +35,7 @@ from Old.functions_prt import wigner_D2  # noqa: E402
 from Profile_fun import W3  # noqa: E402
 from atmosphere import C_LIGHT, K_B  # noqa: E402
 from grid_tensors import QS, tensor_basis_angles  # noqa: E402
+from line_profiles import voigt_function  # noqa: E402
 
 H_PLANCK = 6.62607015e-27
 NU_LARMOR = 1.3996e6  # Hz/G, same value as Profile_fun / Special_cases
@@ -71,7 +71,7 @@ def phi_table(x, vH, a):
     """
     x = np.asarray(x, dtype=float)
     # phi_M(x) = wofz(x - M vH + i a) / sqrt(pi)
-    prof = np.array([wofz(x - M * vH + 1j * a) for M in (-1, 0, 1)]) / np.sqrt(np.pi)
+    prof = np.array([voigt_function(x - M * vH, a) for M in (-1, 0, 1)])
     pair = 0.5 * (prof[:, None, :] + np.conj(prof)[None, :, :])  # [Mu, Mu', nx]
     return np.einsum("klqmn,mnx->klqx", _phi_coefficients(), pair)
 
@@ -79,7 +79,7 @@ def phi_table(x, vH, a):
 def phi_table_disp(x, vH, a):
     """Dispersion counterpart (Faraday-Voigt psi profiles) of phi_table; shape [3, 3, 5, nx]."""
     x = np.asarray(x, dtype=float)
-    prof = np.array([wofz(x - M * vH + 1j * a) for M in (-1, 0, 1)]) / np.sqrt(np.pi)
+    prof = np.array([voigt_function(x - M * vH, a) for M in (-1, 0, 1)])
     pair = (prof[:, None, :] - np.conj(prof)[None, :, :]) / (2j)
     return np.einsum("klqmn,mnx->klqx", _phi_coefficients(), pair).real
 

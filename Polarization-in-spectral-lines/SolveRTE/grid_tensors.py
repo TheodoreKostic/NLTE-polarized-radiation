@@ -6,8 +6,8 @@ direction is (theta, chi) = (arccos(mu), phi) and gamma is the angle of the
 Stokes-Q reference axis (gamma = 0 means Q is along the projection of the
 vertical onto the plane of the sky, LL04 Table 5.6).
 
-Not included yet: Doppler shifts, rank-1 (orientation) density-matrix elements,
-lower-level polarization, magneto-optical terms.
+Not included yet: rank-1 (orientation) density-matrix elements, lower-level
+polarization, magneto-optical terms.
 """
 import os
 import sys
@@ -24,6 +24,8 @@ for _p in (_HERE, _PARENT, _ROOT):
 from Old.functions_prt import wigner_D2  # noqa: E402
 from Radiation_fun import T  # noqa: E402
 from Hanle_fun import hanle_parameter  # noqa: E402
+from atmosphere import C_LIGHT  # noqa: E402
+from line_profiles import voigt_function  # noqa: E402
 
 QS = np.arange(-2, 3)
 
@@ -52,25 +54,49 @@ def tensor_basis_angles(theta, chi, gamma=0.0):
     return basis
 
 
-def gaussian_profile(grid):
-    """Normalised Gaussian profile phi(k, nu) from the local Doppler width."""
+def absorption_profile(grid):
+    """Normalized, unsplit Voigt absorption profile [depth, frequency, mu].
+
+    The profile is evaluated in the comoving frame using the same projected
+    velocity shift as grid_opacity. Zeeman splitting is not included in the
+    profile weighting of J^K_Q.
+    """
     dnu = grid.line.doppler_width(grid.atm.T, grid.atm.vmic)
-    prof = np.exp(-(grid.nu[None, :] / dnu[:, None]) ** 2)
-    return prof / (prof @ grid.w_nu)[:, None]
+    a = grid.line.A_ul / (4.0 * np.pi * dnu)
+    x = (
+        -grid.nu[None, :, None]
+        + grid.line.nu0 * grid.atm.v_los[:, None, None] * grid.mu[None, None, :] / C_LIGHT
+    ) / dnu[:, None, None]
+    prof = voigt_function(x, a[:, None, None]).real
+    norm = np.einsum("knm,n->km", prof, grid.w_nu)
+    if np.any(norm <= 0.0) or not np.all(np.isfinite(norm)):
+        raise ValueError("frequency grid does not resolve a positive finite line-profile integral")
+    return prof / norm[:, None, :]
 
 
 def jkq_from_stokes(grid, stokes, basis=None, profile=None):
-    """J^K_Q(k) = (1/4pi) sum_{nu,mu,phi} w phi_nu(k) sum_i T^K_Q(i) S_i.
+    """Profile-weighted J^K_Q(k) from Stokes [depth, IQUV, nu, mu, phi].
 
-    stokes: [N, 4, nnu, nmu, nphi]. Returns [N, 3, 5].
+    A custom profile may have shape [depth, frequency] (shared by all rays) or
+    [depth, frequency, mu]. By default, use the local comoving Voigt profile.
+    Returns [depth, K, Q+2].
     """
     if basis is None:
         basis = tensor_basis(grid.mu, grid.phi)
     if profile is None:
-        profile = gaussian_profile(grid)
+        profile = absorption_profile(grid)
+    profile = np.asarray(profile)
     w_ang = grid.w_mu[:, None] * grid.w_phi[None, :]
-    # angle-and-frequency weighted Stokes: [N, 4, nmu, nphi]
-    S = np.einsum("kinmp,kn,n,mp->kimp", stokes, profile, grid.w_nu, w_ang)
+    if profile.shape == (grid.atm.N, len(grid.nu)):
+        S = np.einsum("kinmp,kn,n,mp->kimp", stokes, profile, grid.w_nu, w_ang)
+    elif profile.shape == (grid.atm.N, len(grid.nu), len(grid.mu)):
+        S = np.einsum("kinmp,knm,n,mp->kimp", stokes, profile, grid.w_nu, w_ang)
+    else:
+        raise ValueError(
+            "profile must have shape "
+            f"({grid.atm.N}, {len(grid.nu)}) or "
+            f"({grid.atm.N}, {len(grid.nu)}, {len(grid.mu)}), got {profile.shape}"
+        )
     return np.einsum("iKQmp,kimp->kKQ", basis, S) / (4 * np.pi)
 
 

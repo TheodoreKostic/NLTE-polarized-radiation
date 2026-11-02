@@ -1,6 +1,7 @@
 """Validation of the grid propagation matrix (eta, rho) and emissivity, including Stokes V.
 
-Run:  MPLBACKEND=Agg python validate_propagation.py
+Run:  python validate_propagation.py
+Add --plot to write the diagnostic figure.
 Known cases used:
   1. B = 0: eta_I = eta0 * Voigt, nothing else.
   2. Zeeman triplet (LL04 Eq. 9.x): eta_{I,Q,U,V} and rho_{Q,U,V} for arbitrary (theta, chi).
@@ -9,9 +10,15 @@ Known cases used:
   5. Milne-Eddington (Unno-Rachkovsky): I(0) = B0 e1 + mu B1 K^-1 e1 versus the closed form.
 Figure: validate_propagation.png
 """
+import argparse
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.special import wofz
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--plot", action="store_true", help="write the diagnostic figure")
+ARGS = parser.parse_args()
+if ARGS.plot:
+    import matplotlib.pyplot as plt
 
 from atmosphere import LineModel, C_LIGHT
 from grid_opacity import point_emission_and_propagation, eta0, planck, NU_LARMOR
@@ -29,9 +36,11 @@ results = []
 
 
 def check(name, err, tol):
-    ok = err < tol
-    results.append(ok)
+    ok = np.isfinite(err) and err < tol
+    results.append(bool(ok))
     print(f"[{'PASS' if ok else 'FAIL'}] {name}: {err:.2e} (tol {tol:.0e})")
+    if not ok:
+        raise AssertionError(f"{name}: error {err:.3e} is not below tolerance {tol:.3e}")
 
 
 def run(B, th, chi, J=ZERO_J, C_ul=0.0, T=1e-12, gamma=0.0):
@@ -133,29 +142,33 @@ def milne_eddington(eta, beta, B0, B1, mu=1.0):
 cases = [("B=1500 G, θ_B=0°, χ_B=0°", 1500.0, 0.0, 0.0),
          ("B=1500 G, θ_B=90°, χ_B=17°", 1500.0, np.pi / 2, np.deg2rad(17.0)),
          ("B=1500 G, θ_B=57°, χ_B=34°", 1500.0, np.deg2rad(57.0), np.deg2rad(34.0))]
-fig, axes = plt.subplots(len(cases), 4, figsize=(15, 8), sharex=True)
+if ARGS.plot:
+    fig, axes = plt.subplots(len(cases), 4, figsize=(15, 8), sharex=True)
 for row, (lab, B_, th_, chi_) in enumerate(cases):
     _, eta = run(B_, th_, chi_)
     num, closed = milne_eddington(eta, 5.0, 1.0, 1.0)
     cont = 1.0 + 1.0
     err = np.abs(num - closed).max() / np.abs(num).max()
     check(f"Unno-Rachkovsky closed form vs K^-1 ({lab})", err, 1e-9)
-    for i, nm in enumerate("IQUV"):
-        ax = axes[row, i]
-        off = 1.0 if i == 0 else 0.0
-        y_num, y_cl = (num[i] + off) / cont, (closed[i] + off) / cont
-        ax.plot(X, y_num, "k", label="K$^{-1}$ solve")
-        ax.plot(X, y_cl, "r--", label="closed form")
-        name = "I/I_c" if i == 0 else f"{nm}/I_c"
-        ax.set_title(f"{lab}: {name}", fontsize=8)
-        if i > 0 and np.abs(y_num).max() < 1e-8:
-            ax.set_ylim(-0.15, 0.15)
-            ax.text(0.5, 0.5, "zero (|signal| < 1e-8)", transform=ax.transAxes, ha="center", fontsize=8)
-    axes[row, 0].legend(fontsize=7)
-for ax in axes[-1]:
-    ax.set_xlabel(r"$(\nu-\nu_0)/\Delta\nu_D$")
-fig.tight_layout()
-fig.savefig("validate_propagation.png", dpi=110)
+    if ARGS.plot:
+        for i, nm in enumerate("IQUV"):
+            ax = axes[row, i]
+            off = 1.0 if i == 0 else 0.0
+            y_num, y_cl = (num[i] + off) / cont, (closed[i] + off) / cont
+            ax.plot(X, y_num, "k", label="K$^{-1}$ solve")
+            ax.plot(X, y_cl, "r--", label="closed form")
+            name = "I/I_c" if i == 0 else f"{nm}/I_c"
+            ax.set_title(f"{lab}: {name}", fontsize=8)
+            if i > 0 and np.abs(y_num).max() < 1e-8:
+                ax.set_ylim(-0.15, 0.15)
+                ax.text(0.5, 0.5, "zero (|signal| < 1e-8)", transform=ax.transAxes, ha="center", fontsize=8)
+        axes[row, 0].legend(fontsize=7)
+if ARGS.plot:
+    for ax in axes[-1]:
+        ax.set_xlabel(r"$(\nu-\nu_0)/\Delta\nu_D$")
+    fig.tight_layout()
+    fig.savefig("validate_propagation.png", dpi=110)
+    plt.close(fig)
 
 # Milne-Eddington weak-field V against the derivative of Stokes I (end-to-end Stokes V)
 B_, th_, chi_ = 5.0, 0.8, 0.0
@@ -165,4 +178,4 @@ I_prof = 1.0 + num[0]
 Vwf = NU_LARMOR * B_ * np.cos(th_) * np.gradient(I_prof, NU)
 check("ME profile: V = nu_L B cos(th) dI/dnu (weak field)", np.abs(num[3] - Vwf).max() / np.abs(Vwf).max(), 5e-3)
 
-print(f"\n{sum(results)}/{len(results)} checks passed; figure: validate_propagation.png")
+print(f"\n{sum(results)}/{len(results)} checks passed")
