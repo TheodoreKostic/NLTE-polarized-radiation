@@ -26,14 +26,18 @@ class Atmosphere1D:
     """Per-depth model. Every array has length N."""
     z: np.ndarray
     T: np.ndarray
-    n_l: np.ndarray
+    n_l: np.ndarray # also in the line model
     B: np.ndarray
     theta_B: np.ndarray
     chi_B: np.ndarray
     v_los: np.ndarray      # velocity [cm/s]; profile center shift is nu0*v_los*mu/c
     D2: np.ndarray        # depolarizing collision rate of the upper level [1/s]
-    C_ul: np.ndarray      # inelastic de-excitation rate [1/s]
+    C_ul: np.ndarray      # inelastic de-excitation rate [1/s] this should go into line model
     vmic: np.ndarray = None
+    # Strength [G] of the unresolved (sub-grid) part of the field. It is the same physical
+    # field as B/theta_B/chi_B, just its small-scale structure: at each depth the field is
+    # B_mean + B_unres * n, with n a random direction uniform on the sphere. None or 0 = off.
+    B_unres: np.ndarray = None
 
     def __post_init__(self):
         for f in fields(self):
@@ -42,6 +46,10 @@ class Atmosphere1D:
                 setattr(self, f.name, np.asarray(val, dtype=float))
         if self.vmic is None:
             self.vmic = np.zeros_like(self.z)
+        if self.B_unres is None:
+            self.B_unres = np.zeros_like(self.z)
+        if np.any(self.B_unres < 0):
+            raise ValueError("B_unres must be non-negative")
         n = len(self.z)
         for f in fields(self):
             if getattr(self, f.name).shape != (n,):
@@ -63,6 +71,7 @@ class Atmosphere1D:
 @dataclass
 class LineModel:
     """Constant atomic parameters of a two-level line."""
+    # Constant atomic parameters of the line. (add C_ul, n_l )
     nu0: float        # line centre frequency [Hz]
     A_ul: float       # Einstein A [1/s]
     gJu: float

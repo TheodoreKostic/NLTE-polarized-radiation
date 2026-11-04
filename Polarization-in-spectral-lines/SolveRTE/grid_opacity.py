@@ -35,16 +35,20 @@ from Old.functions_prt import wigner_D2  # noqa: E402
 from Profile_fun import W3  # noqa: E402
 from atmosphere import C_LIGHT, K_B  # noqa: E402
 from grid_tensors import QS, tensor_basis_angles  # noqa: E402
-from line_profiles import voigt_function  # noqa: E402
+from line_profiles import NU_LARMOR, voigt_function  # noqa: E402
 
 H_PLANCK = 6.62607015e-27
-NU_LARMOR = 1.3996e6  # Hz/G, same value as Profile_fun / Special_cases
 POLE_TOL = 1e-10
 
 
 @lru_cache(maxsize=1)
 def _phi_coefficients():
-    """C[K, K', Q+2, Mu+1, Mu'+1]: angular coefficients of Phi^Q_{KK'} for Jl=0, Ju=1."""
+    """Angular coefficients of the generalized profiles Phi^Q_{KK'} for Jl=0, Ju=1.
+
+    Returns C[K, K', Q+2, Mu+1, Mu'+1] built from Wigner 3-j symbols (LL04 Eq. 10.40).
+    Phi^Q_{KK'}(x) = sum_{Mu,Mu'} C[...] * (profile pair of Zeeman components Mu, Mu').
+    Independent of frequency and field, so it is computed once and cached.
+    """
     Ju, Jl, Ml = 1, 0, 0
     C = np.zeros((3, 3, 5, 3, 3))
     for K in range(3):
@@ -65,9 +69,14 @@ def _phi_coefficients():
 
 
 def phi_table(x, vH, a):
-    """Vectorised Phi^Q_{KK'}(x) with the Voigt-Faraday profile; shape [3, 3, 5, nx].
+    """Vectorised absorption-type profiles Phi^Q_{KK'}(x), shape [3, 3, 5, nx].
 
-    Same definition as Profile_fun.Phi_generalized (x in Doppler units).
+    x is the frequency in Doppler units (positive on the red-to-line-center side as
+    defined in point_emission_and_propagation), vH = gJu * nu_L * B / dnu_D is the
+    Zeeman shift in Doppler units and a the Voigt damping parameter. Each of the three
+    Zeeman components (M = -1, 0, 1) is a Voigt profile shifted by M*vH; the pair
+    products are projected on the angular coefficients of _phi_coefficients.
+    Same definition as Profile_fun.Phi_generalized.
     """
     x = np.asarray(x, dtype=float)
     # phi_M(x) = wofz(x - M vH + i a) / sqrt(pi)
@@ -77,7 +86,12 @@ def phi_table(x, vH, a):
 
 
 def phi_table_disp(x, vH, a):
-    """Dispersion counterpart (Faraday-Voigt psi profiles) of phi_table; shape [3, 3, 5, nx]."""
+    """Dispersion counterpart of phi_table, shape [3, 3, 5, nx].
+
+    Built from the imaginary parts (Faraday-Voigt functions) of the Zeeman component
+    profiles. Used for the magneto-optical terms rho_Q, rho_U, rho_V of the
+    propagation matrix; same arguments as phi_table.
+    """
     x = np.asarray(x, dtype=float)
     prof = np.array([voigt_function(x - M * vH, a) for M in (-1, 0, 1)])
     pair = (prof[:, None, :] - np.conj(prof)[None, :, :]) / (2j)
@@ -85,16 +99,23 @@ def phi_table_disp(x, vH, a):
 
 
 def phi00_norm():
-    """c00 such that Phi^0_{00}(x) = c00 * phi(x) at B = 0."""
+    """Normalization c00 such that Phi^0_{00}(x) = c00 * phi(x) at B = 0.
+
+    Dividing by it makes eta0/(c00*dnu_D) * Phi^0_00 integrate to eta0 over frequency.
+    """
     return _phi_coefficients()[0, 0, 2].sum()
 
 
 def magnetic_frame_geometry(mu, phi, theta_B, chi_B, gamma):
-    """Observer angles in the magnetic frame and Q/U back-rotation, for a grid of rays.
+    """Observer geometry in the magnetic frame, for a grid of rays.
 
-    Replicates prepare_magnetic_branch_state (B_vector=None,
-    mode "fixed_gamma_rotate_qu_back"). Returns theta_mag, chi_mag, back_rot
-    with shape [nmu, nphi].
+    The magnetic frame has its z axis along B. For each ray (mu, phi) of the vertical
+    frame this returns the ray's polar/azimuthal angles in the magnetic frame
+    (theta_mag, chi_mag) and the angle by which Q/U must be rotated to go back to the
+    vertical-frame reference direction (back_rot). The Stokes reference axis is
+    gamma from the theta direction. Rays at the magnetic pole have an undefined
+    azimuth and get chi = 0. Replicates prepare_magnetic_branch_state (B_vector=None,
+    mode "fixed_gamma_rotate_qu_back"). Shapes [nmu, nphi].
     """
     theta = np.arccos(np.clip(mu, -1.0, 1.0))[:, None] * np.ones((1, len(phi)))
     chi = np.ones((len(mu), 1)) * np.asarray(phi)[None, :]
@@ -129,11 +150,13 @@ def magnetic_frame_geometry(mu, phi, theta_B, chi_B, gamma):
 
 
 def _rotate_pair(q, u, psi):
+    """Rotate the (Q, U) pair by reference-axis angle psi: Q' = Q cos2psi + U sin2psi, U' = -Q sin2psi + U cos2psi."""
     c2, s2 = np.cos(2 * psi), np.sin(2 * psi)
     return q * c2 + u * s2, -q * s2 + u * c2
 
 
 def planck(nu, T):
+    """Planck function B_nu(T) [erg s^-1 cm^-2 Hz^-1 sr^-1]; used for the thermal (collisional) part of eps."""
     return 2 * H_PLANCK * nu**3 / C_LIGHT**2 / np.expm1(H_PLANCK * nu / (K_B * T))
 
 
@@ -145,7 +168,14 @@ def eta0(line, n_l):
 
 
 def rho2_magnetic(J2, line, B, theta_B, chi_B, D2, C_ul):
-    """Upper-level rho^2_Q in the magnetic frame (the form used by prepare_magnetic_branch_state)."""
+    """Upper-level rho^2_Q in the magnetic frame (the form used by prepare_magnetic_branch_state).
+
+    The radiation tensor J^2 (vertical frame) is rotated into the frame where B is the
+    quantization axis, where the Hanle operator is diagonal:
+        rho^2_Q = [D^dagger J^2]_Q / (1 + (D2 + C_ul)/A + i Q Hu),   Hu = 2 pi nu_L gJu B / A.
+    Collisions (elastic D2 and inelastic C_ul) damp every Q equally; the magnetic term
+    i Q Hu rotates and damps Q != 0 components (Hanle effect). B = 0 gives a pure damping.
+    """
     Hu = 2 * np.pi * NU_LARMOR * B * line.gJu / line.A_ul
     jmag = wigner_D2(chi_B, theta_B, 0.0).conj().T @ J2
     return jmag / (1.0 + (D2 + C_ul) / line.A_ul + 1j * QS * Hu)
@@ -155,7 +185,19 @@ def point_emission_and_propagation(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, v_los, vmic, D2, C_ul,
     gamma=0.0, rho_sign=1.0,
 ):
-    """eps [4, nnu, nmu, nphi] and eta [7, nnu, nmu, nphi] at one depth point.
+    """Local emissivity and propagation matrix at one depth point for ONE magnetic field.
+
+    Inputs: JKQ [3, 5] radiation tensors (index [K, Q+2], vertical frame); mu, phi ray
+    grid; nu offsets from line center; T, n_l the temperature and lower-level density;
+    (B, theta_B, chi_B) the field vector; v_los, vmic line-of-sight and micro-turbulent
+    velocities; D2, C_ul collisional rates; gamma Stokes reference angle.
+    Steps: Doppler width and damping -> Zeeman profile tables Phi -> radiation-tensor
+    basis in the magnetic frame -> rho^2 (Hanle + collisions) -> eps and eta per ray ->
+    rotate Q/U back to the vertical-frame reference -> add the thermal part
+    (1 - beta0) B_nu eta.
+    eps [4, nnu, nmu, nphi] and eta [7, nnu, nmu, nphi] at one depth point.
+    For an unresolved field on top of this field use
+    point_emission_and_propagation_unresolved.
 
     eta order: (eta_I, eta_Q, eta_U, eta_V, rho_Q, rho_U, rho_V).
     """
@@ -208,10 +250,95 @@ def point_emission_and_propagation(
     return eps, eta
 
 
-def fill_grid(grid, gamma=0.0, rho_sign=1.0):
-    """Fill grid.eps and grid.eta at every depth point from grid.JKQ and the atmosphere."""
+def isotropic_field_directions(n_theta=8, n_chi=8):
+    """Quadrature nodes and weights for averaging over directions uniform on the sphere.
+
+    Gauss-Legendre in cos(theta) (n_theta nodes) times a uniform midpoint rule in
+    chi (n_chi nodes). Returns flat arrays (theta, chi, weights) of length
+    n_theta * n_chi; weights sum to 1, so sum(w * f) is the sphere average of f.
+    The rule is exact for spherical harmonics up to degree 2*n_theta - 1 in
+    cos(theta) and n_chi - 1 in chi, enough for the rank-2 radiation tensors.
+    """
+    x, w = np.polynomial.legendre.leggauss(n_theta)
+    chi = 2 * np.pi * (np.arange(n_chi) + 0.5) / n_chi
+    th = np.repeat(np.arccos(x), n_chi)
+    ch = np.tile(chi, n_theta)
+    wt = np.repeat(w / 2.0, n_chi) / n_chi
+    return th, ch, wt
+
+
+def total_field_samples(B, theta_B, chi_B, B_unres, n_theta=8, n_chi=8):
+    """Field vectors B_mean + B_unres * n for n uniform on the sphere.
+
+    The mean field (B, theta_B, chi_B) is the resolved field; B_unres is the
+    strength of the unresolved random component added on top of it. Returns
+    (B_tot, theta_tot, chi_tot, weights): the strength and direction of each
+    sampled total field and its quadrature weight (weights sum to 1).
+    If the sum vanishes the direction is arbitrary and set to (0, 0); this is
+    harmless because the Zeeman/Hanle terms are then zero.
+    """
+    th, ch, wt = isotropic_field_directions(n_theta, n_chi)
+    mean = B * np.array([np.sin(theta_B) * np.cos(chi_B),
+                         np.sin(theta_B) * np.sin(chi_B),
+                         np.cos(theta_B)])
+    rnd = B_unres * np.stack([np.sin(th) * np.cos(ch), np.sin(th) * np.sin(ch), np.cos(th)], -1)
+    tot = mean[None, :] + rnd
+    b_tot = np.linalg.norm(tot, axis=-1)
+    safe = np.where(b_tot > 0, b_tot, 1.0)
+    theta_tot = np.where(b_tot > 0, np.arccos(np.clip(tot[:, 2] / safe, -1.0, 1.0)), 0.0)
+    chi_tot = np.where(b_tot > 0, np.arctan2(tot[:, 1], tot[:, 0]), 0.0)
+    return b_tot, theta_tot, chi_tot, wt
+
+
+def point_emission_and_propagation_unresolved(
+    JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, B_unres, v_los, vmic, D2, C_ul,
+    gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8,
+):
+    """eps and eta at one depth point for a mean field plus an unresolved isotropic component.
+
+    The physical field is B_mean + B_unres * n, with n a random direction uniform on
+    the sphere (B_unres = 0 reduces exactly to point_emission_and_propagation; B = 0
+    gives a purely isotropic field of strength B_unres). For each sampled total field
+    the full local physics is evaluated (Zeeman profiles, Hanle-modified rho^2, Faraday
+    terms) and eps and all seven eta/rho coefficients are averaged with the same
+    weights. Averaging the coefficients, not the Stokes profiles, is what the transfer
+    equation needs for a sub-resolution field; averaging eps and eta together keeps
+    the emission and absorption mutually consistent.
+
+    Accuracy: n_theta x n_chi direction nodes. With B_unres >> B or small Hu the default
+    8x8 is accurate to ~1e-5 or better. When B ~ B_unres and Hu >> 1 the total field
+    can pass near zero and the integrand is sharply peaked, so raise n_theta, n_chi
+    (24x24 gives ~1e-8 at B = B_unres = 5 G, but ~3e-3 at 50 G) and check convergence.
+    """
+    b_tot, t_tot, c_tot, wt = total_field_samples(B, theta_B, chi_B, B_unres, n_theta, n_chi)
+    eps = eta = 0.0
+    for b, t, c, w in zip(b_tot, t_tot, c_tot, wt):
+        e, h = point_emission_and_propagation(
+            JKQ, line, mu, phi, nu, T, n_l, b, t, c, v_los, vmic, D2, C_ul,
+            gamma=gamma, rho_sign=rho_sign,
+        )
+        eps = eps + w * e
+        eta = eta + w * h
+    return eps, eta
+
+
+def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8):
+    """Fill grid.eps and grid.eta at every depth point from grid.JKQ and the atmosphere.
+
+    Depths with atm.B_unres > 0 use the mean-plus-unresolved-field average
+    (point_emission_and_propagation_unresolved); all others use the single mean
+    field directly. n_theta, n_chi set the direction quadrature of that average.
+    """
     a = grid.atm
     for k in range(a.N):
+        if a.B_unres[k] > 0:
+            grid.eps[k], grid.eta[k] = point_emission_and_propagation_unresolved(
+                grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
+                a.T[k], a.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.B_unres[k],
+                a.v_los[k], a.vmic[k], a.D2[k], a.C_ul[k],
+                gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
+            )
+            continue
         grid.eps[k], grid.eta[k] = point_emission_and_propagation(
             grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
             a.T[k], a.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.v_los[k], a.vmic[k],

@@ -23,7 +23,7 @@ for _p in (_HERE, _PARENT, _ROOT):
 
 from Old.functions_prt import wigner_D2  # noqa: E402
 from Radiation_fun import T  # noqa: E402
-from Hanle_fun import hanle_parameter  # noqa: E402
+from line_profiles import NU_LARMOR  # noqa: E402
 from atmosphere import C_LIGHT  # noqa: E402
 from line_profiles import voigt_function  # noqa: E402
 
@@ -135,7 +135,7 @@ def solve_rho_point(JKQ, line, B, theta_B, chi_B, D2, C_ul=0.0, w2=1.0):
     """
     rho = np.zeros((3, 5), dtype=complex)
     rho[0, 2] = JKQ[0, 2] / (1.0 + C_ul / line.A_ul)
-    Hu = hanle_parameter(B, line.gJu, line.A_ul)
+    Hu = 2 * np.pi * NU_LARMOR * B * line.gJu / line.A_ul
     H = hanle_operator_general(Hu, (D2 + C_ul) / line.A_ul, theta_B, chi_B)
     rho[2] = w2 * (H @ JKQ[2])
     return rho

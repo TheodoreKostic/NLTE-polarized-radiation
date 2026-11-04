@@ -2,6 +2,8 @@
 import numpy as np
 from scipy.special import wofz
 
+NU_LARMOR = 1.3996e6  # Larmor frequency per gauss [Hz/G]; single source for all Hanle/Zeeman terms
+
 
 def voigt_function(x, a):
     """Complex Voigt function w(x + i a) / sqrt(pi), with x in Doppler units."""
