@@ -24,7 +24,10 @@ from atmosphere import LineModel, C_LIGHT
 from grid_opacity import point_emission_and_propagation, eta0, planck, NU_LARMOR
 
 NU0, DND = 4.3e14, 4e9
-LINE = LineModel(NU0, 5e7, 1.0, 1.0, 1, 0, 40)
+LINE = LineModel(
+    NU0, 5e7, 1.0, 1.0, 1, 0, 40,
+    n_l=np.ones(1), C_ul=np.zeros(1),
+)
 VMIC = DND * C_LIGHT / NU0
 A_DAMP = LINE.A_ul / (4 * np.pi * DND)
 X = np.linspace(-8, 8, 1601)  # x = (nu0 - nu)/dnu_D (LL04 convention, as in Phi_generalized)

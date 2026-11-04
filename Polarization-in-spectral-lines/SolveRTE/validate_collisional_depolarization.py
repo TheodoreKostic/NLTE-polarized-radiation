@@ -10,7 +10,10 @@ from grid_tensors import solve_rho_point
 from Old.functions_prt import wigner_D2
 
 NU0, DND = 4.3e14, 4e9
-LINE = LineModel(NU0, 5e7, 1.0, 1.0, 1, 0, 40)
+LINE = LineModel(
+    NU0, 5e7, 1.0, 1.0, 1, 0, 40,
+    n_l=np.ones(1), C_ul=np.zeros(1),
+)
 VMIC = DND * C_LIGHT / NU0
 X = np.linspace(-6, 6, 241)
 NU = -X * DND

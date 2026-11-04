@@ -19,17 +19,18 @@ def check(name, error, tolerance):
         )
 
 
-line = LineModel(4.3e14, 5e7, 1.0, 1.0, 1.0, 0.0, 40.0)
+line = LineModel(
+    4.3e14, 5e7, 1.0, 1.0, 1.0, 0.0, 40.0,
+    n_l=np.array([1e10, 2e10]), C_ul=np.zeros(2),
+)
 atmosphere = Atmosphere1D(
     z=np.array([1.0, 0.0]),
     T=np.array([5000.0, 6500.0]),
-    n_l=np.array([1e10, 2e10]),
     B=np.zeros(2),
     theta_B=np.zeros(2),
     chi_B=np.zeros(2),
     v_los=np.array([0.0, 4e5]),
     D2=np.zeros(2),
-    C_ul=np.zeros(2),
     vmic=np.array([1e5, 2e5]),
 )
 grid = Grid.build(atmosphere, line, n_mu_half=2, n_phi=4, n_nu=401, nu_max_doppler=8.0)
@@ -57,7 +58,7 @@ for k in range(atmosphere.N):
         grid.phi,
         grid.nu,
         atmosphere.T[k],
-        atmosphere.n_l[k],
+        line.n_l[k],
         0.0,
         0.0,
         0.0,
@@ -71,7 +72,7 @@ for k in range(atmosphere.N):
         + line.nu0 * atmosphere.v_los[k] * grid.mu[None, :] / C_LIGHT
     ) / dnu
     raw_profile = voigt_function(x, a).real
-    amplitude = eta0(line, atmosphere.n_l[k]) / (phi00_norm() * dnu)
+    amplitude = eta0(line, line.n_l[k]) / (phi00_norm() * dnu)
     opacity_profile = eta[0, :, :, 0] / amplitude
     check(
         f"local opacity uses shared Voigt profile at depth {k}",

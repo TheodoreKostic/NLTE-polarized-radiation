@@ -31,7 +31,10 @@ from atmosphere import LineModel, C_LIGHT
 from grid_opacity import point_emission_and_propagation, eta0, phi00_norm
 
 NU0 = 4.3e14
-LINE = LineModel(NU0, A_ul, S.GJU, S.GJU, 1, 0, 40)
+LINE = LineModel(
+    NU0, A_ul, S.GJU, S.GJU, 1, 0, 40,
+    n_l=np.ones(1), C_ul=np.zeros(1),
+)
 VMIC = default_Delta_nu_D * C_LIGHT / NU0  # with T ~ 0 this gives Delta nu_D = 4e9 exactly
 X = S.XGRID
 NU = -X * default_Delta_nu_D  # nu - nu0, since Special_cases x = (nu0 - nu)/dnu_D

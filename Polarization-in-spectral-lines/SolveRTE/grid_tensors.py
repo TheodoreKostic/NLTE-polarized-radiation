@@ -146,7 +146,8 @@ def solve_rho(grid, w2=1.0):
     a = grid.atm
     for k in range(a.N):
         grid.rho[k] = solve_rho_point(
-            grid.JKQ[k], grid.line, a.B[k], a.theta_B[k], a.chi_B[k], a.D2[k], a.C_ul[k], w2
+            grid.JKQ[k], grid.line, a.B[k], a.theta_B[k], a.chi_B[k], a.D2[k],
+            grid.line.C_ul[k], w2
         )
     return grid.rho
 

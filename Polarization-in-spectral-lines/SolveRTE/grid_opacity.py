@@ -323,9 +323,11 @@ def point_emission_and_propagation_unresolved(
 
 
 def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8):
-    """Fill grid.eps and grid.eta at every depth point from grid.JKQ and the atmosphere.
+    """Fill grid.eps and grid.eta from grid.JKQ, atmosphere, and line properties.
 
-    Depths with atm.B_unres > 0 use the mean-plus-unresolved-field average
+    The line supplies depth-dependent n_l and C_ul; the atmosphere supplies the
+    thermodynamic, velocity, and magnetic fields. Depths with atm.B_unres > 0 use
+    the mean-plus-unresolved-field average
     (point_emission_and_propagation_unresolved); all others use the single mean
     field directly. n_theta, n_chi set the direction quadrature of that average.
     """
@@ -334,14 +336,14 @@ def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8):
         if a.B_unres[k] > 0:
             grid.eps[k], grid.eta[k] = point_emission_and_propagation_unresolved(
                 grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
-                a.T[k], a.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.B_unres[k],
-                a.v_los[k], a.vmic[k], a.D2[k], a.C_ul[k],
+                a.T[k], grid.line.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.B_unres[k],
+                a.v_los[k], a.vmic[k], a.D2[k], grid.line.C_ul[k],
                 gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
             )
             continue
         grid.eps[k], grid.eta[k] = point_emission_and_propagation(
             grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
-            a.T[k], a.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.v_los[k], a.vmic[k],
-            a.D2[k], a.C_ul[k], gamma=gamma, rho_sign=rho_sign,
+            a.T[k], grid.line.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.v_los[k], a.vmic[k],
+            a.D2[k], grid.line.C_ul[k], gamma=gamma, rho_sign=rho_sign,
         )
     return grid

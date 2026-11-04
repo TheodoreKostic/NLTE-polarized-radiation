@@ -26,13 +26,11 @@ class Atmosphere1D:
     """Per-depth model. Every array has length N."""
     z: np.ndarray
     T: np.ndarray
-    n_l: np.ndarray # also in the line model
     B: np.ndarray
     theta_B: np.ndarray
     chi_B: np.ndarray
     v_los: np.ndarray      # velocity [cm/s]; profile center shift is nu0*v_los*mu/c
     D2: np.ndarray        # depolarizing collision rate of the upper level [1/s]
-    C_ul: np.ndarray      # inelastic de-excitation rate [1/s] this should go into line model
     vmic: np.ndarray = None
     # Strength [G] of the unresolved (sub-grid) part of the field. It is the same physical
     # field as B/theta_B/chi_B, just its small-scale structure: at each depth the field is
@@ -70,8 +68,7 @@ class Atmosphere1D:
 
 @dataclass
 class LineModel:
-    """Constant atomic parameters of a two-level line."""
-    # Constant atomic parameters of the line. (add C_ul, n_l )
+    """Atomic parameters and per-depth line properties of a two-level line."""
     nu0: float        # line centre frequency [Hz]
     A_ul: float       # Einstein A [1/s]
     gJu: float
@@ -79,6 +76,16 @@ class LineModel:
     Ju: float
     Jl: float
     mass_amu: float
+    n_l: np.ndarray   # lower-level population density at each depth
+    C_ul: np.ndarray  # inelastic de-excitation rate at each depth [1/s]
+
+    def __post_init__(self):
+        self.n_l = np.asarray(self.n_l, dtype=float)
+        self.C_ul = np.asarray(self.C_ul, dtype=float)
+        for name in ("n_l", "C_ul"):
+            value = getattr(self, name)
+            if value.ndim != 1:
+                raise ValueError(f"{name} must be a one-dimensional depth array")
 
     def doppler_width(self, T, vmic=0.0):
         """Doppler width in frequency [Hz]."""
@@ -97,6 +104,14 @@ class Grid:
     w_phi: np.ndarray
     nu: np.ndarray       # offsets from line centre [Hz]
     w_nu: np.ndarray
+
+    def __post_init__(self):
+        for name in ("n_l", "C_ul"):
+            value = getattr(self.line, name)
+            if value.shape != (self.atm.N,):
+                raise ValueError(
+                    f"line.{name} must have shape ({self.atm.N},), got {value.shape}"
+                )
 
     @classmethod
     def build(cls, atm, line, n_mu_half=4, n_phi=8, n_nu=61, nu_max_doppler=6.0):

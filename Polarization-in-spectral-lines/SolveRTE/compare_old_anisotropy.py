@@ -9,10 +9,9 @@ J^2_0 / J^0_0 versus optical depth with
 Three separate questions are tested:
   1. Conventions: the same intensity field gives the same J^0_0, J^2_0 from the old
      formulas and from grid_tensors.jkq_from_stokes (tolerance 1e-12).
-  2. Transfer: cell-wise exact propagation with formal_solver.propagate_constant_slab
-     (source constant per cell, equal to the mean of its two nodes) versus the old
-     first-order scheme, both measured against a fine-grid reference solution of the
-     same problem.
+  2. Transfer: the old first-order sweep, short characteristics, and cell-wise exact
+     propagation with formal_solver.propagate_constant_slab (source constant per cell,
+     equal to the mean of its two nodes), measured against a fine-grid reference.
   3. Angular grid: the default Grid.build quadrature versus the old 8-node Gauss-Legendre.
 
 Both Lambda-iterations are the plain (unaccelerated) kind. eps = 1e-2 is used so that
@@ -29,6 +28,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from numba import jit
 
 from atmosphere import Atmosphere1D, Grid, LineModel
 from formal_solver import propagate_constant_slab
@@ -76,6 +76,81 @@ def old_sweep(S, tau, mu):
     return I
 
 
+@jit(nopython=True)
+def short_characteristics(tau, S, mu, I_boundary):
+    """Parabolic short-characteristics sweep for one ray and scalar source."""
+    ND = S.shape[0]
+    begin = ND - 1
+    end = -1
+    step = -1
+    if mu < 0:
+        begin = 0
+        end = ND
+        step = 1
+
+    I = np.zeros(ND)
+    L = np.zeros(ND)
+    I[begin] = I_boundary
+
+    for d in range(begin + step, end - step, step):
+        delta_u = (tau[d - step] - tau[d]) / mu
+        delta_d = (tau[d] - tau[d + step]) / mu
+        expd = np.exp(-delta_u)
+
+        if delta_u <= 0.01:
+            du = delta_u
+            w0 = du * (
+                1.0 - du / 2.0 + du**2 / 6.0 - du**3 / 24.0 + du**4 / 120.0
+                - du**5 / 720.0 + du**6 / 5040.0 - du**7 / 40320.0 + du**8 / 362880.0
+            )
+            w1 = du**2 * (
+                0.5 - du / 3.0 + du**2 / 8.0 - du**3 / 30.0 + du**4 / 144.0
+                - du**5 / 840.0 + du**6 / 5760.0 - du**7 / 45360.0 + du**8 / 403200.0
+            )
+            w2 = du**3 * (
+                1.0 / 3.0 - du / 4.0 + du**2 / 10.0 - du**3 / 36.0 + du**4 / 168.0
+                - du**5 / 960.0 + du**6 / 6480.0 - du**7 / 50400.0 + du**8 / 443520.0
+            )
+        else:
+            w0 = 1.0 - expd
+            w1 = w0 - delta_u * expd
+            w2 = 2.0 * w1 - delta_u**2 * expd
+
+        psi0 = w0 + (
+            w1 * (delta_u / delta_d - delta_d / delta_u)
+            - w2 * (1.0 / delta_d + 1.0 / delta_u)
+        ) / (delta_u + delta_d)
+        psiu = (w2 / delta_u + w1 * delta_d / delta_u) / (delta_u + delta_d)
+        psid = (w2 / delta_d - w1 * delta_u / delta_d) / (delta_u + delta_d)
+
+        I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d] + psid * S[d + step]
+        L[d] = psi0
+
+    d = end - step
+    delta_u = (tau[d - step] - tau[d]) / mu
+    expd = np.exp(-delta_u)
+    if delta_u < 0.01:
+        expd = 1.0 - delta_u + delta_u**2 / 2.0 - delta_u**3 / 6.0
+        psi0 = delta_u / 2.0 - delta_u**2 / 6.0 + delta_u**3 / 24.0
+        psiu = delta_u / 2.0 - delta_u**2 / 3.0 + delta_u**3 / 8.0
+    else:
+        psi0 = 1.0 - (1.0 - expd) / delta_u
+        psiu = -expd + (1.0 - expd) / delta_u
+
+    I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d]
+    L[d] = psi0
+    return I, L
+
+
+def short_sweep(S, tau, mu):
+    """Sweep all ordinates with the parabolic short-characteristics solver."""
+    I = np.zeros((len(tau), len(mu)))
+    for m, mu_m in enumerate(mu):
+        boundary = B_PLANCK if mu_m > 0 else 0.0
+        I[:, m], _ = short_characteristics(tau, S, mu_m, boundary)
+    return I
+
+
 def old_iteration(tau, mu, w, eps, n_iter, tol=0.0):
     """The old Lambda-iteration; returns S, J00, J20, I, number of iterations used."""
     S = np.full(len(tau), B_PLANCK)
@@ -97,11 +172,14 @@ def make_grid(tau, mu, w_mu):
     """A Grid carrying the angular quadrature; one depth point per tau value."""
     n = len(tau)
     atm = Atmosphere1D(
-        z=-np.asarray(tau), T=np.full(n, 6000.0), n_l=np.ones(n), B=np.zeros(n),
+        z=-np.asarray(tau), T=np.full(n, 6000.0), B=np.zeros(n),
         theta_B=np.zeros(n), chi_B=np.zeros(n), v_los=np.zeros(n),
-        D2=np.zeros(n), C_ul=np.zeros(n),
+        D2=np.zeros(n),
     )
-    line = LineModel(6.5e14, 2e8, 1.0, 1.0, 1.0, 0.0, 87.6)
+    line = LineModel(
+        6.5e14, 2e8, 1.0, 1.0, 1.0, 0.0, 87.6,
+        n_l=np.ones(n), C_ul=np.zeros(n),
+    )
     phi = 2 * np.pi * np.arange(4) / 4
     return Grid(atm, line, np.asarray(mu), np.asarray(w_mu), phi, np.full(4, 2 * np.pi / 4),
                 np.array([-1.0, 1.0]), np.array([1.0, 1.0]))
@@ -183,6 +261,23 @@ def new_iteration(tau, mu, w_mu, eps, tol=1e-11, max_iter=50000):
     return S, J00, J20, I, it + 1, err < tol
 
 
+def short_iteration(tau, mu, w_mu, eps, tol=1e-11, max_iter=50000):
+    """Lambda-iteration using short characteristics and jkq_from_stokes moments."""
+    grid = make_grid(tau, mu, w_mu)
+    w00, _ = moment_weights(grid)
+    S = np.full(len(tau), B_PLANCK)
+    for it in range(max_iter):
+        I = short_sweep(S, tau, mu)
+        S_new = (1 - eps) * (I @ w00) + eps * B_PLANCK
+        err = np.max(np.abs(S_new - S))
+        S = S_new
+        if err < tol:
+            break
+    I = short_sweep(S, tau, mu)
+    J00, J20 = jkq00_20(grid, I)
+    return S, J00, J20, I, it + 1, err < tol
+
+
 def gauss_legendre(n):
     return np.polynomial.legendre.leggauss(n)
 
@@ -191,6 +286,13 @@ def solve_new(n, mu, w):
     tau = np.logspace(np.log10(TAU_MIN), np.log10(TAU_MAX), n)
     out = new_iteration(tau, mu, w, EPS)
     assert out[5], f"new Lambda-iteration did not converge for N={n}"
+    return tau, out[1], out[2]
+
+
+def solve_short(n, mu, w):
+    tau = np.logspace(np.log10(TAU_MIN), np.log10(TAU_MAX), n)
+    out = short_iteration(tau, mu, w, EPS)
+    assert out[5], f"short-characteristics Lambda-iteration did not converge for N={n}"
     return tau, out[1], out[2]
 
 
@@ -219,6 +321,14 @@ def main():
     e = np.exp(-np.diff(tau_c)[:, None] / np.abs(mu8)[None, :])
     check("cell propagator: a = exp(-dtau/mu)", np.max(np.abs(a - e)), 1e-13)
     check("cell propagator: b = 1 - exp(-dtau/mu)", np.max(np.abs(b - (1 - e))), 1e-13)
+    constant_source = np.full(len(tau_c), 0.37)
+    for mu_m in mu8:
+        I_sc, _ = short_characteristics(tau_c, constant_source, mu_m, 0.37)
+        check(
+            f"short characteristics: constant-source ray mu={mu_m:.2f}",
+            np.max(np.abs(I_sc - 0.37)),
+            1e-12,
+        )
 
     # 3. Refinement study (same 8 angles). Every grid is a subset of the reference grid.
     tau_ref, J00_ref, J20_ref = solve_new(N_REF, mu8, w8)
@@ -226,15 +336,24 @@ def main():
     scale_w = np.max(np.abs(w_ref))
     err = lambda x, y: np.max(np.abs(x - y))
     sols = {}
-    print(f"{'N':>5} | {'old J00':>9} {'old w':>9} | {'new J00':>9} {'new w':>9}   (max errors vs N={N_REF} reference)")
+    print(
+        f"{'N':>5} | {'old J00':>9} {'old w':>9} | {'SC J00':>9} {'SC w':>9} | "
+        f"{'new J00':>9} {'new w':>9}   (max errors vs N={N_REF} reference)"
+    )
     for n in N_LIST:
         step = (N_REF - 1) // (n - 1)
         _, jo0, jo2 = solve_old(n, mu8, w8)
+        _, js0, js2 = solve_short(n, mu8, w8)
         _, jn0, jn2 = solve_new(n, mu8, w8)
         sols[n] = (jo0, jo2 / jo0, jn0, jn2 / jn0)
         r0, rw = J00_ref[::step], w_ref[::step]
         sols[n] += (err(jo0, r0), err(jo2 / jo0, rw), err(jn0, r0), err(jn2 / jn0, rw))
-        print(f"{n:5d} | {sols[n][4]:9.2e} {sols[n][5]:9.2e} | {sols[n][6]:9.2e} {sols[n][7]:9.2e}")
+        sols[n] += (js0, js2 / js0, err(js0, r0), err(js2 / js0, rw))
+        print(
+            f"{n:5d} | {sols[n][4]:9.2e} {sols[n][5]:9.2e} | "
+            f"{sols[n][10]:9.2e} {sols[n][11]:9.2e} | "
+            f"{sols[n][6]:9.2e} {sols[n][7]:9.2e}"
+        )
     ns = list(N_LIST)
     for k in range(len(ns) - 1):
         check(f"new J^0_0 error shrinks N={ns[k]} -> {ns[k + 1]} (ratio)", sols[ns[k + 1]][6] / sols[ns[k]][6], 0.7)
@@ -248,8 +367,13 @@ def main():
     n = ns[0]
     step = (N_REF - 1) // (n - 1)
     sh_c = np.logspace(np.log10(TAU_MIN), np.log10(TAU_MAX), n) < 1.0
-    print(f"tau < 1, N={n}: max relative J00 error old {np.max(np.abs(sols[n][0][sh_c] / J00_ref[::step][sh_c] - 1)):.1%}, "
-          f"new {np.max(np.abs(sols[n][2][sh_c] / J00_ref[::step][sh_c] - 1)):.1%}")
+    print(
+        f"tau < 1, N={n}: max relative J00 error old "
+        f"{np.max(np.abs(sols[n][0][sh_c] / J00_ref[::step][sh_c] - 1)):.1%}, "
+        f"short characteristics "
+        f"{np.max(np.abs(sols[n][8][sh_c] / J00_ref[::step][sh_c] - 1)):.1%}, "
+        f"new {np.max(np.abs(sols[n][2][sh_c] / J00_ref[::step][sh_c] - 1)):.1%}"
+    )
 
     # 4. Angular quadrature: 8-node Gauss-Legendre versus 16 nodes, and Grid.build's default.
     _, J00_ref16, J20_ref16 = solve_new(N_LIST[-1], *gauss_legendre(16))
@@ -276,14 +400,18 @@ def main():
     for n, ls in ((n0, "o"), (n1, "s")):
         t = np.logspace(np.log10(TAU_MIN), np.log10(TAU_MAX), n)
         ax[0].semilogx(t, sols[n][0], ls + "--", ms=3, label=f"old scheme N={n}")
+        ax[0].semilogx(t, sols[n][8], ls + "-.", ms=3, label=f"short characteristics N={n}")
         ax[0].semilogx(t, sols[n][2], ls + ":", ms=3, label=f"new propagator N={n}")
         ax[1].semilogx(t, sols[n][1], ls + "--", ms=3, label=f"old scheme N={n}")
+        ax[1].semilogx(t, sols[n][9], ls + "-.", ms=3, label=f"short characteristics N={n}")
         ax[1].semilogx(t, sols[n][3], ls + ":", ms=3, label=f"new propagator N={n}")
     ax[0].set(xlabel=r"$\tau$", ylabel=r"$J^0_0$", title=fr"Mean intensity, $\epsilon$={EPS:g}")
     ax[1].set(xlabel=r"$\tau$", ylabel=r"$J^2_0/J^0_0$", title="Anisotropy")
     ax[2].loglog(ns, [sols[n][4] for n in ns], "o-", label=r"old, $J^0_0$")
     ax[2].loglog(ns, [sols[n][6] for n in ns], "s-", label=r"new, $J^0_0$")
     ax[2].loglog(ns, [sols[n][5] for n in ns], "o--", label="old, anisotropy")
+    ax[2].loglog(ns, [sols[n][10] for n in ns], "^-", label="short characteristics, $J^0_0$")
+    ax[2].loglog(ns, [sols[n][11] for n in ns], "^--", label="short characteristics, anisotropy")
     ax[2].loglog(ns, [sols[n][7] for n in ns], "s--", label="new, anisotropy")
     ax[2].set(xlabel="number of depth points N", ylabel="max error vs reference", title="Refinement study")
     for a_ in ax:

@@ -16,6 +16,7 @@ pump, which is what a depth-dependent solver will have to iterate to consistency
 Run from this directory:  python plot_homogeneous_slab.py   (writes PNGs to plots_slab/)
 """
 import os
+from dataclasses import replace
 
 import matplotlib
 
@@ -31,11 +32,14 @@ from grid_tensors import jkq_from_stokes
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots_slab")
 
 # Sr I 460.7 nm-like Ju=1 -> Jl=0 line
-LINE = LineModel(2.9979e10 / 4.607e-5, 2.01e8, 1.0, 1.0, 1.0, 0.0, 87.6)
 N_DEPTH = 21
 TAU_SLAB = 5.0   # vertical optical thickness at line centre (B = 0, no collisions)
 T = 6000.0
 GAMMA = np.pi / 2
+LINE = LineModel(
+    2.9979e10 / 4.607e-5, 2.01e8, 1.0, 1.0, 1.0, 0.0, 87.6,
+    n_l=np.ones(N_DEPTH), C_ul=np.zeros(N_DEPTH),
+)
 
 # Prescribed pump: J^0_0 = 1, J^2_0 = -0.1 (anisotropy w = sqrt(2) * (-0.1) ~ -0.14)
 PUMP = np.zeros((3, 5), complex)
@@ -53,12 +57,13 @@ CASES = {
 def build(case, z, n_l):
     n = len(z)
     atm = Atmosphere1D(
-        z=z, T=np.full(n, T), n_l=np.full(n, n_l),
+        z=z, T=np.full(n, T),
         B=np.full(n, case["B"]), theta_B=np.full(n, case["th"]), chi_B=np.full(n, 0.3),
-        v_los=np.zeros(n), D2=np.full(n, case["D2"]), C_ul=np.zeros(n),
+        v_los=np.zeros(n), D2=np.full(n, case["D2"]),
         vmic=np.full(n, 1e5), B_unres=np.full(n, case["B_unres"]),
     )
-    grid = Grid.build(atm, LINE, n_mu_half=4, n_phi=8, n_nu=121, nu_max_doppler=6.0).allocate()
+    line = replace(LINE, n_l=np.full(n, n_l), C_ul=np.zeros(n))
+    grid = Grid.build(atm, line, n_mu_half=4, n_phi=8, n_nu=121, nu_max_doppler=6.0).allocate()
     grid.JKQ[:] = PUMP
     fill_grid(grid, gamma=GAMMA, n_theta=12, n_chi=12)
     return grid
@@ -84,7 +89,8 @@ def slab_stokes(grid, z):
 def main():
     os.makedirs(OUT, exist_ok=True)
     # Choose the slab length so that tau_slab holds at line centre for B = 0.
-    probe = build(CASES["B = 0"], np.array([1.0, 0.0]), 1.0)
+    probe_z = np.linspace(1.0, 0.0, N_DEPTH)
+    probe = build(CASES["B = 0"], probe_z, 1.0)
     eta_c = probe.eta[0, 0, len(probe.nu) // 2, -1, 0]  # eta_I at line centre (independent of mu at B = 0)
     length = TAU_SLAB / eta_c  # vertical tau = eta_I(centre) * length, with n_l = 1
     z = np.linspace(length, 0.0, N_DEPTH)
