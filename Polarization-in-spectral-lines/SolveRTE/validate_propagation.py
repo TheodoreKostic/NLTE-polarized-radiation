@@ -6,7 +6,7 @@ Known cases used:
   1. B = 0: eta_I = eta0 * Voigt, nothing else.
   2. Zeeman triplet (LL04 Eq. 9.x): eta_{I,Q,U,V} and rho_{Q,U,V} for arbitrary (theta, chi).
   3. Weak-field limits: V = nu_L B cos(theta) dI/dnu ; Q = -1/4 (nu_L B)^2 sin^2 cos2chi d2I/dnu2.
-  4. Kirchhoff: eps = eta * B_nu (C_ul >> A) and eps = eta * J00 (isotropic, no collisions).
+  4. Kirchhoff: j = eta * B_nu (C_ul >> A) and j = eta * J00 (isotropic, no collisions).
   5. Milne-Eddington (Unno-Rachkovsky): I(0) = B0 e1 + mu B1 K^-1 e1 versus the closed form.
 Figure: validate_propagation.png
 """
@@ -47,9 +47,9 @@ def check(name, err, tol):
 
 
 def run(B, th, chi, J=ZERO_J, C_ul=0.0, T=1e-12, gamma=0.0):
-    eps, eta = point_emission_and_propagation(
+    emis, eta = point_emission_and_propagation(
         J, LINE, MU, PHI, NU, T, 1.0, B, th, chi, 0.0, VMIC, 0.0, C_ul, gamma=gamma)
-    return eps[:, :, 0, 0], eta[:, :, 0, 0] / AMP  # eta in units of eta0/dnu_D
+    return emis[:, :, 0, 0], eta[:, :, 0, 0] / AMP  # eta in units of eta0/dnu_D
 
 
 def triplet(B, th, chi):
@@ -109,15 +109,15 @@ J00 = 1e-5
 Jiso = ZERO_J.copy()
 Jiso[0, 2] = J00
 for B_, th_, chi_ in [(0.0, 0.0, 0.0), (300.0, 0.7, 0.4), (2000.0, 2.2, 1.1)]:
-    eps, eta = run(B_, th_, chi_, J=Jiso)
+    emis, eta = run(B_, th_, chi_, J=Jiso)
     sc = AMP
-    err = np.abs(eps - J00 * eta[:4] * sc).max() / np.abs(J00 * eta[:4] * sc).max()
-    check(f"eps = eta*J00 (isotropic, B={B_:g}, incl. V)", err, 1e-9)
+    err = np.abs(emis - J00 * eta[:4] * sc).max() / np.abs(J00 * eta[:4] * sc).max()
+    check(f"emis = eta*J00 (isotropic, B={B_:g}, incl. V)", err, 1e-9)
 T = 6000.0
 Bnu = planck(NU0, T)
-eps, eta = run(300.0, 0.7, 0.4, J=Jiso, C_ul=1e12, T=T)
+emis, eta = run(300.0, 0.7, 0.4, J=Jiso, C_ul=1e12, T=T)
 ref = Bnu * eta[:4] * AMP
-check("eps = B_nu * eta (C_ul >> A), incl. V", np.abs(eps - ref).max() / np.abs(ref).max(), 1e-4)
+check("emis = B_nu * eta (C_ul >> A), incl. V", np.abs(emis - ref).max() / np.abs(ref).max(), 1e-4)
 
 # 5. Milne-Eddington / Unno-Rachkovsky
 def kmat(e):

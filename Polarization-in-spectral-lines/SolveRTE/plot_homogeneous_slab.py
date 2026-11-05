@@ -3,7 +3,7 @@
 Model (single pass, NOT a self-consistent NLTE solution)
 -------------------------------------------------------
 The slab has constant temperature, density and field. At every depth the local
-emissivity eps and propagation matrix eta are computed from one prescribed radiation
+emission j_i and propagation matrix eta are computed from one prescribed radiation
 tensor J^K_Q (the "pump", the same at all depths). The Stokes vector at each depth,
 frequency and ray is then obtained from the exact constant-slab propagator with no
 radiation entering from outside:
@@ -80,7 +80,7 @@ def slab_stokes(grid, z):
             for inu in range(nnu):
                 for ip in range(nphi):
                     out[k, :, inu, im, ip] = propagate_constant_slab(
-                        grid.eps[k, :, inu, im, ip], grid.eta[k, :, inu, im, ip],
+                        grid.emis[k, :, inu, im, ip], grid.eta[k, :, inu, im, ip],
                         dist, np.zeros(4),
                     )
     return out

@@ -69,10 +69,10 @@ for obs_label, th_obs in S.observer_theta_cases().items():
         fig, axes = plt.subplots(len(cases), 4, figsize=(15, 10), sharex=True)
     for r, cfg in enumerate(cases):
         (I, Q, U, V), hu, vH = S.stokes_for_case(jrad, a_voigt, th_obs, cfg, cache)
-        eps, _ = point_emission_and_propagation(
+        emis, _ = point_emission_and_propagation(
             JKQ, LINE, np.array([np.cos(th_obs)]), np.array([S.CHI_OBS]), NU, 1e-12, 1.0,
             cfg["B"], cfg["theta_B"], cfg["chi_B"], 0.0, VMIC, 0.0, 0.0, gamma=S.GAMMA_OBS)
-        mine = eps[:, :, 0, 0] * SCALE
+        mine = emis[:, :, 0, 0] * SCALE
         ref = np.array([I, Q, U, V])
         err_iqu = np.abs(mine[:3] - ref[:3]).max() / np.abs(ref[0]).max()
         worst = max(worst, err_iqu)

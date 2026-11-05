@@ -39,10 +39,10 @@ def check(name, error, tol):
 def emission(B, th_B, chi_B, D2, C_ul=0.0, J00=0.0):
     J = JKQ.copy()
     J[0, 2] = J00
-    eps, _ = point_emission_and_propagation(
+    emis, _ = point_emission_and_propagation(
         J, LINE, MU, PHI, NU, 1e-12, 1.0, B, th_B, chi_B, 0.0, VMIC, D2, C_ul,
         gamma=np.pi / 2)
-    return eps[:, :, 0, 0]
+    return emis[:, :, 0, 0]
 
 
 def rel(a, b):
@@ -52,7 +52,7 @@ def rel(a, b):
 # 1. B = 0: the whole rank-2 term is reduced by 1 / (1 + D2/A).
 for D2 in (0.5 * LINE.A_ul, 2.0 * LINE.A_ul, 10.0 * LINE.A_ul):
     ref = emission(0.0, 0.3, 0.2, 0.0) / (1.0 + D2 / LINE.A_ul)
-    check(f"B=0: eps scales as 1/(1+D2/A), D2/A={D2 / LINE.A_ul:g}",
+    check(f"B=0: emission scales as 1/(1+D2/A), D2/A={D2 / LINE.A_ul:g}",
           rel(emission(0.0, 0.3, 0.2, D2), ref), 1e-12)
 
 # 2. D2 and C_ul enter the rank-2 relaxation only through their sum.

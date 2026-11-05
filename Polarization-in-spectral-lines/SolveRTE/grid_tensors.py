@@ -153,7 +153,7 @@ def solve_rho(grid, w2=1.0):
 
 
 def emissivity_from_rho_grid(rho, basis):
-    """eps_i(Omega) = sum_{K,Q} (-1)^Q T^K_Q(i, Omega) conj(rho^K_{-Q}).
+    """j_i(Omega) = sum_{K,Q} (-1)^Q T^K_Q(i, Omega) conj(rho^K_{-Q}).
 
     The conjugate follows the convention of Chapter_13_magnetic_branch_plots.py
     (used by Special_cases.py). rho: [3, 5] at one point (or [N, 3, 5]); basis
@@ -161,5 +161,5 @@ def emissivity_from_rho_grid(rho, basis):
     """
     phase = (-1.0) ** QS
     rho_m = np.conj(rho[..., ::-1])  # conj(rho^K_{-Q})
-    eps = np.einsum("iKQmp,...KQ->...imp", basis, phase * rho_m)
-    return eps.real
+    emis = np.einsum("iKQmp,...KQ->...imp", basis, phase * rho_m)
+    return emis.real

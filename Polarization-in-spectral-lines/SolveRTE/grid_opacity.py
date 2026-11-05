@@ -5,17 +5,24 @@ redistribution, same profile functions Phi^Q_{KK'} (LL04 Eq. 10.40) and same
 magnetic-frame geometry as Chapter_13_magnetic_branch_plots.py /
 Special_cases.py:
 
-    eps_i(nu, Omega) = eta0/(c00 dnu_D) * Re[ beta0 * sum_K' Phi^0_{0K'} T^K'_0(i) J00
+    j_i(nu, Omega) = f*eta0/(c00 dnu_D) * Re[ (1 - eps) * sum_K' Phi^0_{0K'} T^K'_0(i) J00
                          + sum_{K',Q} (-1)^Q Phi^Q_{2K'} T^K'_Q(i) conj(rho^2_{-Q}) ]
-                       + (1 - beta0) * B_nu(T) * eta_i(nu, Omega)
-    eta_i = eta0/(c00 dnu_D) * Re[sum_K' Phi^0_{0K'} T^K'_0(i)]        (i = I,Q,U,V)
-    rho_i = sign * eta0/(c00 dnu_D) * Im[sum_K' Phi^0_{0K'} T^K'_0(i)]  (i = Q,U,V)
+                       + eps * B_nu(T) * eta_i(nu, Omega)                  (line part)
+                       + chi_c * B_nu(T) * delta_{i,I}                      (continuum)
+    eta_i = f*eta0/(c00 dnu_D) * Re[sum_K' Phi^0_{0K'} T^K'_0(i)]  + chi_c * delta_{i,I}
+    rho_i = sign * f*eta0/(c00 dnu_D) * Im[sum_K' Phi^0_{0K'} T^K'_0(i)]  (i = Q,U,V)
+
+with f = 1 - exp(-h nu0/kT) the stimulated-emission correction of the line opacity and
+the photon destruction probability (a scalar, NOT the emission vector, which is j_i / emis)
+    eps = C_ul f / (A_ul + C_ul f)            (see destruction_probability).
+chi_c is the continuum opacity (unpolarized, purely thermal, constant across the line).
+Total line-plus-continuum source function: S(nu) = (eta_l S_l + chi_c B) / (eta_l + chi_c).
 
 with T^K'_Q evaluated in the magnetic frame, and Q/U (and rho_Q/rho_U) rotated
 back to the reference of the vertical frame, as in the "fixed_gamma_rotate_qu_back"
 mode. rho^2_Q (magnetic frame) = [D^dagger J^2]_Q / (1 + (C_ul + D2)/A + i Q Hu).
 
-Units: eta in cm^-1, eps in erg s^-1 cm^-3 Hz^-1 sr^-1 when J^K_Q is in
+Units: eta in cm^-1, emission j_i (array name emis) in erg s^-1 cm^-3 Hz^-1 sr^-1 when J^K_Q is in
 erg s^-1 cm^-2 Hz^-1 sr^-1 (J^K_Q is the profile-weighted line average).
 """
 import os
@@ -156,12 +163,29 @@ def _rotate_pair(q, u, psi):
 
 
 def planck(nu, T):
-    """Planck function B_nu(T) [erg s^-1 cm^-2 Hz^-1 sr^-1]; used for the thermal (collisional) part of eps."""
+    """Planck function B_nu(T) [erg s^-1 cm^-2 Hz^-1 sr^-1]; used for the thermal (collisional) part of the emission j_i."""
     return 2 * H_PLANCK * nu**3 / C_LIGHT**2 / np.expm1(H_PLANCK * nu / (K_B * T))
 
 
+def stimulated_factor(nu0, T):
+    """Stimulated-emission correction f = 1 - exp(-h nu0 / (k T)) of the line opacity (f -> 1 as T -> 0)."""
+    return -np.expm1(-H_PLANCK * nu0 / (K_B * T))
+
+
+def destruction_probability(line, T, C_ul, stimulated=True):
+    """Photon destruction probability eps = C_ul f / (A_ul + C_ul f).
+
+    f = 1 - exp(-h nu0 / kT) accounts for stimulated emission; stimulated=False sets
+    f = 1 and gives eps = C_ul / (A_ul + C_ul). Depth dependence enters through T and
+    C_ul (line.C_ul[k]). eps = 0 for C_ul = 0 and eps -> 1 for C_ul >> A_ul.
+    """
+    f = stimulated_factor(line.nu0, T) if stimulated else 1.0
+    return C_ul * f / (line.A_ul + C_ul * f)
+
+
 def eta0(line, n_l):
-    """Frequency-integrated line absorption coefficient [cm^-1 Hz] (no stimulated emission)."""
+    """Frequency-integrated line absorption coefficient [cm^-1 Hz], WITHOUT the
+    stimulated-emission factor (multiply by stimulated_factor(nu0, T) for the effective opacity)."""
     lam = C_LIGHT / line.nu0
     gratio = (2 * line.Ju + 1) / (2 * line.Jl + 1)
     return gratio * lam**2 * line.A_ul * n_l / (8 * np.pi)
@@ -183,19 +207,23 @@ def rho2_magnetic(J2, line, B, theta_B, chi_B, D2, C_ul):
 
 def point_emission_and_propagation(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, v_los, vmic, D2, C_ul,
-    gamma=0.0, rho_sign=1.0,
+    gamma=0.0, rho_sign=1.0, chi_c=0.0, stimulated=True,
 ):
     """Local emissivity and propagation matrix at one depth point for ONE magnetic field.
 
     Inputs: JKQ [3, 5] radiation tensors (index [K, Q+2], vertical frame); mu, phi ray
     grid; nu offsets from line center; T, n_l the temperature and lower-level density;
     (B, theta_B, chi_B) the field vector; v_los, vmic line-of-sight and micro-turbulent
-    velocities; D2, C_ul collisional rates; gamma Stokes reference angle.
+    velocities; D2, C_ul collisional rates; gamma Stokes reference angle; chi_c continuum
+    opacity [cm^-1]; stimulated selects the stimulated-emission factor f in the line
+    opacity and in the destruction probability eps (see destruction_probability).
+    The line source is (1 - eps) J00 + eps B_nu; collisions also damp rho^2 through
+    (D2 + C_ul)/A. The continuum adds chi_c to eta_I and chi_c B_nu to j_I only.
     Steps: Doppler width and damping -> Zeeman profile tables Phi -> radiation-tensor
-    basis in the magnetic frame -> rho^2 (Hanle + collisions) -> eps and eta per ray ->
-    rotate Q/U back to the vertical-frame reference -> add the thermal part
-    (1 - beta0) B_nu eta.
-    eps [4, nnu, nmu, nphi] and eta [7, nnu, nmu, nphi] at one depth point.
+    basis in the magnetic frame -> rho^2 (Hanle + collisions) -> emission j_i and eta per
+    ray -> rotate Q/U back to the vertical-frame reference -> add the thermal part
+    eps B_nu eta -> add the continuum.
+    Returns (emis, eta): emis [4, nnu, nmu, nphi] (j_I, j_Q, j_U, j_V) and eta [7, nnu, nmu, nphi] at one depth point.
     For an unresolved field on top of this field use
     point_emission_and_propagation_unresolved.
 
@@ -205,17 +233,19 @@ def point_emission_and_propagation(
     a = line.A_ul / (4 * np.pi * dnu_D)
     vH = line.gJu * NU_LARMOR * B / dnu_D
     c00 = phi00_norm()
-    amp = eta0(line, n_l) / (c00 * dnu_D)
+    f_stim = stimulated_factor(line.nu0, T) if stimulated else 1.0
+    amp = f_stim * eta0(line, n_l) / (c00 * dnu_D)
 
     theta_m, chi_m, back = magnetic_frame_geometry(mu, phi, theta_B, chi_B, gamma)
     basis = tensor_basis_angles(theta_m, chi_m, gamma)  # [4, 3, 5, nmu, nphi]
     rho2 = rho2_magnetic(JKQ[2], line, B, theta_B, chi_B, D2, C_ul)
-    beta0 = 1.0 / (1.0 + C_ul / line.A_ul)
+    eps = destruction_probability(line, T, C_ul, stimulated)
+    beta0 = 1.0 - eps
     j00 = JKQ[0, 2]
     sign = (-1.0) ** QS
 
     nnu, nmu, nphi = len(nu), len(mu), len(phi)
-    eps = np.zeros((4, nnu, nmu, nphi))
+    emis = np.zeros((4, nnu, nmu, nphi))
     eta = np.zeros((7, nnu, nmu, nphi))
 
     for im, m in enumerate(mu):
@@ -231,7 +261,7 @@ def point_emission_and_propagation(
         tab_d = phi_table_disp(x, vH, a)
         disp = np.einsum("kx,ikp->ixp", tab_d[0, :, 2], basis[:, :, 2, im].real)
         eta_c = amp * absorb
-        eps_c = amp * (beta0 * j00 * absorb + scat2)
+        scat = amp * (beta0 * j00 * absorb + scat2)
 
         comp = np.concatenate([eta_c.real, rho_sign * amp * disp[1:]])
         eta[:, :, im, :] = comp
@@ -240,14 +270,17 @@ def point_emission_and_propagation(
             q2, u2 = _rotate_pair(eta[cq, :, im, :], eta[cu, :, im, :], back[im][None, :])
             eta[cq, :, im, :], eta[cu, :, im, :] = q2, u2
 
-        s = eps_c.real
+        s = scat.real
         eq, eu = _rotate_pair(s[1], s[2], back[im][None, :])
-        eps[0, :, im, :], eps[1, :, im, :] = s[0], eq
-        eps[2, :, im, :], eps[3, :, im, :] = eu, s[3]
+        emis[0, :, im, :], emis[1, :, im, :] = s[0], eq
+        emis[2, :, im, :], emis[3, :, im, :] = eu, s[3]
 
-    if beta0 < 1.0:
-        eps += (1.0 - beta0) * planck(line.nu0, T) * eta[[0, 1, 2, 3]]
-    return eps, eta
+    if eps > 0.0:
+        emis += eps * planck(line.nu0, T) * eta[[0, 1, 2, 3]]
+    if chi_c > 0.0:
+        eta[0] += chi_c
+        emis[0] += chi_c * planck(line.nu0, T)
+    return emis, eta
 
 
 def isotropic_field_directions(n_theta=8, n_chi=8):
@@ -292,18 +325,19 @@ def total_field_samples(B, theta_B, chi_B, B_unres, n_theta=8, n_chi=8):
 
 def point_emission_and_propagation_unresolved(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, B_unres, v_los, vmic, D2, C_ul,
-    gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8,
+    gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, chi_c=0.0, stimulated=True,
 ):
-    """eps and eta at one depth point for a mean field plus an unresolved isotropic component.
+    """emis and eta at one depth point for a mean field plus an unresolved isotropic component.
 
     The physical field is B_mean + B_unres * n, with n a random direction uniform on
     the sphere (B_unres = 0 reduces exactly to point_emission_and_propagation; B = 0
     gives a purely isotropic field of strength B_unres). For each sampled total field
     the full local physics is evaluated (Zeeman profiles, Hanle-modified rho^2, Faraday
-    terms) and eps and all seven eta/rho coefficients are averaged with the same
+    terms) and the emission j_i and all seven eta/rho coefficients are averaged with the same
     weights. Averaging the coefficients, not the Stokes profiles, is what the transfer
-    equation needs for a sub-resolution field; averaging eps and eta together keeps
-    the emission and absorption mutually consistent.
+    equation needs for a sub-resolution field; averaging emis and eta together keeps
+    the emission and absorption mutually consistent. The continuum chi_c does not depend
+    on the field and passes through the average unchanged (weights sum to 1).
 
     Accuracy: n_theta x n_chi direction nodes. With B_unres >> B or small Hu the default
     8x8 is accurate to ~1e-5 or better. When B ~ B_unres and Hu >> 1 the total field
@@ -311,22 +345,23 @@ def point_emission_and_propagation_unresolved(
     (24x24 gives ~1e-8 at B = B_unres = 5 G, but ~3e-3 at 50 G) and check convergence.
     """
     b_tot, t_tot, c_tot, wt = total_field_samples(B, theta_B, chi_B, B_unres, n_theta, n_chi)
-    eps = eta = 0.0
+    emis = eta = 0.0
     for b, t, c, w in zip(b_tot, t_tot, c_tot, wt):
         e, h = point_emission_and_propagation(
             JKQ, line, mu, phi, nu, T, n_l, b, t, c, v_los, vmic, D2, C_ul,
-            gamma=gamma, rho_sign=rho_sign,
+            gamma=gamma, rho_sign=rho_sign, chi_c=chi_c, stimulated=stimulated,
         )
-        eps = eps + w * e
+        emis = emis + w * e
         eta = eta + w * h
-    return eps, eta
+    return emis, eta
 
 
-def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8):
-    """Fill grid.eps and grid.eta from grid.JKQ, atmosphere, and line properties.
+def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True):
+    """Fill grid.emis and grid.eta from grid.JKQ, atmosphere, and line properties.
 
-    The line supplies depth-dependent n_l and C_ul; the atmosphere supplies the
-    thermodynamic, velocity, and magnetic fields. Depths with atm.B_unres > 0 use
+    The line supplies depth-dependent n_l and C_ul (hence a depth-dependent photon
+    destruction probability); the atmosphere supplies the thermodynamic, velocity,
+    magnetic and continuum-opacity (chi_c) fields. Depths with atm.B_unres > 0 use
     the mean-plus-unresolved-field average
     (point_emission_and_propagation_unresolved); all others use the single mean
     field directly. n_theta, n_chi set the direction quadrature of that average.
@@ -334,16 +369,18 @@ def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8):
     a = grid.atm
     for k in range(a.N):
         if a.B_unres[k] > 0:
-            grid.eps[k], grid.eta[k] = point_emission_and_propagation_unresolved(
+            grid.emis[k], grid.eta[k] = point_emission_and_propagation_unresolved(
                 grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
                 a.T[k], grid.line.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.B_unres[k],
                 a.v_los[k], a.vmic[k], a.D2[k], grid.line.C_ul[k],
                 gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
+                chi_c=a.chi_c[k], stimulated=stimulated,
             )
             continue
-        grid.eps[k], grid.eta[k] = point_emission_and_propagation(
+        grid.emis[k], grid.eta[k] = point_emission_and_propagation(
             grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
             a.T[k], grid.line.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.v_los[k], a.vmic[k],
             a.D2[k], grid.line.C_ul[k], gamma=gamma, rho_sign=rho_sign,
+            chi_c=a.chi_c[k], stimulated=stimulated,
         )
     return grid

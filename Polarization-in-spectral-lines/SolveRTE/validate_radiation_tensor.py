@@ -5,7 +5,7 @@ Run from this directory with: python validate_radiation_tensor.py
 import numpy as np
 
 from atmosphere import Atmosphere1D, C_LIGHT, Grid, LineModel
-from grid_opacity import eta0, phi00_norm, point_emission_and_propagation
+from grid_opacity import eta0, phi00_norm, point_emission_and_propagation, stimulated_factor
 from grid_tensors import absorption_profile, jkq_from_stokes, tensor_basis
 from line_profiles import voigt_function
 
@@ -72,7 +72,7 @@ for k in range(atmosphere.N):
         + line.nu0 * atmosphere.v_los[k] * grid.mu[None, :] / C_LIGHT
     ) / dnu
     raw_profile = voigt_function(x, a).real
-    amplitude = eta0(line, line.n_l[k]) / (phi00_norm() * dnu)
+    amplitude = stimulated_factor(line.nu0, atmosphere.T[k]) * eta0(line, line.n_l[k]) / (phi00_norm() * dnu)
     opacity_profile = eta[0, :, :, 0] / amplitude
     check(
         f"local opacity uses shared Voigt profile at depth {k}",

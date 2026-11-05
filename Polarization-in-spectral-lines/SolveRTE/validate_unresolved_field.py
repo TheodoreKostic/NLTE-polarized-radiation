@@ -44,12 +44,12 @@ check("<B_tot> = B_mean", np.abs(mean - expect).max() / 30.0, 1e-13)
 # 3. B_unres = 0 reproduces the single-field result exactly.
 e0, h0 = single(50.0, 1.1, 0.7)
 e1, h1 = unres(50.0, 1.1, 0.7, 0.0, n_theta=2, n_chi=2)
-check("B_unres=0: eps", rel(e1[:, :, 0, 0], e0[:, :, 0, 0]), 1e-12)
+check("B_unres=0: emis", rel(e1[:, :, 0, 0], e0[:, :, 0, 0]), 1e-12)
 check("B_unres=0: eta", rel(h1[:, :, 0, 0], h0[:, :, 0, 0]), 1e-12)
 
 # 4. A small unresolved component barely changes the mean-field result.
 e2, h2 = unres(50.0, 1.1, 0.7, 1e-6)
-check("B_unres->0 is continuous (eps)", rel(e2[:, :, 0, 0], e0[:, :, 0, 0]), 1e-5)
+check("B_unres->0 is continuous (emis)", rel(e2[:, :, 0, 0], e0[:, :, 0, 0]), 1e-5)
 check("B_unres->0 is continuous (eta)", rel(h2[:, :, 0, 0], h0[:, :, 0, 0]), 1e-5)
 
 # 5. B_mean = 0: purely isotropic field; no net V or Faraday rotation survives.
@@ -67,7 +67,7 @@ check("strong isotropic field: <rho^2> -> J^2/5", np.abs(avg - J2 / 5).max(), 1e
 # 7. Direction quadrature converges. Smooth case: unresolved part larger than the mean.
 eA, hA = unres(5.0, 1.1, 0.7, 50.0, n_theta=16, n_chi=16)
 eB, hB = unres(5.0, 1.1, 0.7, 50.0, n_theta=24, n_chi=24)
-check("quadrature convergence, B_unres > B (eps)", rel(eA, eB), 1e-10)
+check("quadrature convergence, B_unres > B (emis)", rel(eA, eB), 1e-10)
 check("quadrature convergence, B_unres > B (eta)", rel(hA, hB), 1e-10)
 # Hard case: B ~ B_unres with Hu >> 1, where |B_tot| can pass near zero. Compare each
 # quadrature with a 48x48 reference; every doubling of nodes must at least halve the error.
