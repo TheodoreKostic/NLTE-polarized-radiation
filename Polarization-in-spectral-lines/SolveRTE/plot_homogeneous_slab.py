@@ -16,15 +16,13 @@ pump, which is what a depth-dependent solver will have to iterate to consistency
 Run from this directory:  python plot_homogeneous_slab.py   (writes PNGs to plots_slab/)
 """
 import os
-from dataclasses import replace
-
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from atmosphere import Atmosphere1D, Grid, LineModel
+from atmosphere import Atmosphere1D, Grid, LineModel, LineState
 from formal_solver import propagate_constant_slab
 from grid_opacity import fill_grid
 from grid_tensors import jkq_from_stokes
@@ -38,7 +36,6 @@ T = 6000.0
 GAMMA = np.pi / 2
 LINE = LineModel(
     2.9979e10 / 4.607e-5, 2.01e8, 1.0, 1.0, 1.0, 0.0, 87.6,
-    n_l=np.ones(N_DEPTH), C_ul=np.zeros(N_DEPTH),
 )
 
 # Prescribed pump: J^0_0 = 1, J^2_0 = -0.1 (anisotropy w = sqrt(2) * (-0.1) ~ -0.14)
@@ -56,15 +53,16 @@ CASES = {
 
 def build(case, z, n_l):
     n = len(z)
+    B, th, chi = case["B"], case["th"], 0.3
+    vector = B * np.array([np.sin(th) * np.cos(chi), np.sin(th) * np.sin(chi), np.cos(th)])
     atm = Atmosphere1D(
         z=z, T=np.full(n, T),
-        B=np.full(n, case["B"]), theta_B=np.full(n, case["th"]), chi_B=np.full(n, 0.3),
-        v_los=np.zeros(n), D2=np.full(n, case["D2"]),
-        vmic=np.full(n, 1e5), B_unres=np.full(n, case["B_unres"]),
+        B=np.tile(vector, (n, 1)), v_z=np.zeros(n),
+        v_turb=np.full(n, 1e5), B_unres=np.full(n, case["B_unres"]),
     )
-    line = replace(LINE, n_l=np.full(n, n_l), C_ul=np.zeros(n))
-    grid = Grid.build(atm, line, n_mu_half=4, n_phi=8, n_nu=121, nu_max_doppler=6.0).allocate()
-    grid.JKQ[:] = PUMP
+    state = LineState(atm, LINE, np.full(n, n_l), np.zeros(n), np.full(n, case["D2"]))
+    grid = Grid.build(atm, LINE, state, n_mu_half=4, n_phi=8, n_nu=121, nu_max_doppler=6.0).allocate()
+    grid.set_JKQ(np.broadcast_to(PUMP, (n, 3, 5)))
     fill_grid(grid, gamma=GAMMA, n_theta=12, n_chi=12)
     return grid
 
@@ -100,7 +98,7 @@ def main():
     for name, case in CASES.items():
         grid = build(case, z, 1.0)
         stokes = slab_stokes(grid, z)
-        J = jkq_from_stokes(grid, stokes)
+        J = jkq_from_stokes(grid, stokes, gamma=GAMMA)
         results[name] = (grid, stokes, J)
         print(f"{name}: J00(top/mid/bottom) = {J[0, 0, 2].real:.3f} {J[N_DEPTH // 2, 0, 2].real:.3f}"
               f" {J[-1, 0, 2].real:.3f};  w(mid) = {np.sqrt(2) * J[N_DEPTH // 2, 2, 2].real / J[N_DEPTH // 2, 0, 2].real:+.3f}")

@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numba import jit
 
-from atmosphere import Atmosphere1D, Grid, LineModel
+from atmosphere import Atmosphere1D, Grid, LineModel, LineState
 from formal_solver import propagate_constant_slab
 from grid_tensors import jkq_from_stokes
 
@@ -172,16 +172,15 @@ def make_grid(tau, mu, w_mu):
     """A Grid carrying the angular quadrature; one depth point per tau value."""
     n = len(tau)
     atm = Atmosphere1D(
-        z=-np.asarray(tau), T=np.full(n, 6000.0), B=np.zeros(n),
-        theta_B=np.zeros(n), chi_B=np.zeros(n), v_los=np.zeros(n),
-        D2=np.zeros(n),
+        z=-np.asarray(tau), T=np.full(n, 6000.0), B=np.zeros((n, 3)),
+        v_z=np.zeros(n),
     )
     line = LineModel(
         6.5e14, 2e8, 1.0, 1.0, 1.0, 0.0, 87.6,
-        n_l=np.ones(n), C_ul=np.zeros(n),
     )
+    state = LineState(atm, line, np.ones(n), np.zeros(n), np.zeros(n))
     phi = 2 * np.pi * np.arange(4) / 4
-    return Grid(atm, line, np.asarray(mu), np.asarray(w_mu), phi, np.full(4, 2 * np.pi / 4),
+    return Grid(atm, line, state, np.asarray(mu), np.asarray(w_mu), phi, np.full(4, 2 * np.pi / 4),
                 np.array([-1.0, 1.0]), np.array([1.0, 1.0]))
 
 
@@ -380,7 +379,8 @@ def main():
     n = N_LIST[-1]
     step = (N_REF - 1) // (n - 1)
     print(f"angles (N={n}): 8 GL vs 16 GL: J00 {err(sols[n][2], J00_ref16):.2e}, anisotropy {err(sols[n][3], J20_ref16 / J00_ref16):.2e}")
-    gb = Grid.build(make_grid(tau_c, mu8, w8).atm, make_grid(tau_c, mu8, w8).line, n_mu_half=4)
+    base = make_grid(tau_c, mu8, w8)
+    gb = Grid.build(base.atm, base.line, base.line_state, n_mu_half=4)
     _, J00_gb, J20_gb = solve_new(n, gb.mu, gb.w_mu)
     print(f"Grid.build default angles vs 8 GL on [-1,1]: J00 {err(J00_gb, sols[n][2]):.2e}, anisotropy {err(J20_gb / J00_gb, sols[n][3]):.2e}")
 

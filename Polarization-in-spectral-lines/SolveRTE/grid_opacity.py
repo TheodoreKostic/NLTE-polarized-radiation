@@ -177,7 +177,7 @@ def destruction_probability(line, T, C_ul, stimulated=True):
 
     f = 1 - exp(-h nu0 / kT) accounts for stimulated emission; stimulated=False sets
     f = 1 and gives eps = C_ul / (A_ul + C_ul). Depth dependence enters through T and
-    C_ul (line.C_ul[k]). eps = 0 for C_ul = 0 and eps -> 1 for C_ul >> A_ul.
+    C_ul (line_state.C_ul[k]). eps = 0 for C_ul = 0 and eps -> 1 for C_ul >> A_ul.
     """
     f = stimulated_factor(line.nu0, T) if stimulated else 1.0
     return C_ul * f / (line.A_ul + C_ul * f)
@@ -187,7 +187,7 @@ def eta0(line, n_l):
     """Frequency-integrated line absorption coefficient [cm^-1 Hz], WITHOUT the
     stimulated-emission factor (multiply by stimulated_factor(nu0, T) for the effective opacity)."""
     lam = C_LIGHT / line.nu0
-    gratio = (2 * line.Ju + 1) / (2 * line.Jl + 1)
+    gratio = (2 * line.J_u + 1) / (2 * line.J_l + 1)
     return gratio * lam**2 * line.A_ul * n_l / (8 * np.pi)
 
 
@@ -200,21 +200,23 @@ def rho2_magnetic(J2, line, B, theta_B, chi_B, D2, C_ul):
     Collisions (elastic D2 and inelastic C_ul) damp every Q equally; the magnetic term
     i Q Hu rotates and damps Q != 0 components (Hanle effect). B = 0 gives a pure damping.
     """
-    Hu = 2 * np.pi * NU_LARMOR * B * line.gJu / line.A_ul
+    Hu = 2 * np.pi * NU_LARMOR * B * line.g_u / line.A_ul
     jmag = wigner_D2(chi_B, theta_B, 0.0).conj().T @ J2
     return jmag / (1.0 + (D2 + C_ul) / line.A_ul + 1j * QS * Hu)
 
 
 def point_emission_and_propagation(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, v_los, vmic, D2, C_ul,
-    gamma=0.0, rho_sign=1.0, chi_c=0.0, stimulated=True,
+    gamma=0.0, rho_sign=1.0, chi_c=0.0, stimulated=True, damping=None, v_x=0.0, v_y=0.0,
 ):
     """Local emissivity and propagation matrix at one depth point for ONE magnetic field.
 
     Inputs: JKQ [3, 5] radiation tensors (index [K, Q+2], vertical frame); mu, phi ray
     grid; nu offsets from line center; T, n_l the temperature and lower-level density;
-    (B, theta_B, chi_B) the field vector; v_los, vmic line-of-sight and micro-turbulent
-    velocities; D2, C_ul collisional rates; gamma Stokes reference angle; chi_c continuum
+    (B, theta_B, chi_B) the field vector; v_los is the vertical velocity, v_x and v_y
+    the horizontal velocities, and vmic the microturbulent velocity [cm/s].
+    damping is the dimensionless Voigt a, or None for natural broadening only.
+    D2, C_ul are collisional rates; gamma is the Stokes reference angle; chi_c continuum
     opacity [cm^-1]; stimulated selects the stimulated-emission factor f in the line
     opacity and in the destruction probability eps (see destruction_probability).
     The line source is (1 - eps) J00 + eps B_nu; collisions also damp rho^2 through
@@ -230,8 +232,10 @@ def point_emission_and_propagation(
     eta order: (eta_I, eta_Q, eta_U, eta_V, rho_Q, rho_U, rho_V).
     """
     dnu_D = line.doppler_width(T, vmic)
-    a = line.A_ul / (4 * np.pi * dnu_D)
-    vH = line.gJu * NU_LARMOR * B / dnu_D
+    a = line.A_ul / (4 * np.pi * dnu_D) if damping is None else damping
+    if not np.isfinite(a) or a < 0:
+        raise ValueError("damping must be finite and non-negative")
+    vH = line.g_u * NU_LARMOR * B / dnu_D
     c00 = phi00_norm()
     f_stim = stimulated_factor(line.nu0, T) if stimulated else 1.0
     amp = f_stim * eta0(line, n_l) / (c00 * dnu_D)
@@ -249,17 +253,24 @@ def point_emission_and_propagation(
     eta = np.zeros((7, nnu, nmu, nphi))
 
     for im, m in enumerate(mu):
-        # nu is the offset nu - nu0; Phi uses LL04's reduced frequency x = (nu0 - nu_shifted)/dnu_D
-        x = (-nu + line.nu0 * v_los * m / C_LIGHT) / dnu_D
-        tab = phi_table(x, vH, a)  # [3, 3, 5, nx]
+        # nu is the offset nu - nu0; project the velocity onto each ray.
+        if v_x == 0.0 and v_y == 0.0:
+            x = (-nu + line.nu0 * v_los * m / C_LIGHT) / dnu_D
+            tab = phi_table(x, vH, a)[..., None]
+            tab_d = phi_table_disp(x, vH, a)[..., None]
+        else:
+            projected = (v_los * m + np.sqrt(max(0.0, 1.0 - m * m))
+                         * (v_x * np.cos(phi) + v_y * np.sin(phi)))
+            x = (-nu[:, None] + line.nu0 * projected[None, :] / C_LIGHT) / dnu_D
+            tab = phi_table(x.ravel(), vH, a).reshape(3, 3, 5, nnu, nphi)
+            tab_d = phi_table_disp(x.ravel(), vH, a).reshape(3, 3, 5, nnu, nphi)
         # absorption-like K=0 block: sum_K' Phi^0_{0K'}(x) T^K'_0(i); [4, nx, nphi]
-        absorb = np.einsum("kx,ikp->ixp", tab[0, :, 2], basis[:, :, 2, im])
+        absorb = np.einsum("kxp,ikp->ixp", tab[0, :, 2], basis[:, :, 2, im])
         # rank-2 block: sum_{K',Q} (-1)^Q Phi^Q_{2K'} T^K'_Q(i) conj(rho2_{-Q})
         scat2 = np.einsum(
-            "kqx,ikqp,q->ixp", tab[2], basis[..., im, :], sign * np.conj(rho2[::-1])
+            "kqxp,ikqp,q->ixp", tab[2], basis[..., im, :], sign * np.conj(rho2[::-1])
         )
-        tab_d = phi_table_disp(x, vH, a)
-        disp = np.einsum("kx,ikp->ixp", tab_d[0, :, 2], basis[:, :, 2, im].real)
+        disp = np.einsum("kxp,ikp->ixp", tab_d[0, :, 2], basis[:, :, 2, im].real)
         eta_c = amp * absorb
         scat = amp * (beta0 * j00 * absorb + scat2)
 
@@ -326,6 +337,7 @@ def total_field_samples(B, theta_B, chi_B, B_unres, n_theta=8, n_chi=8):
 def point_emission_and_propagation_unresolved(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, B_unres, v_los, vmic, D2, C_ul,
     gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, chi_c=0.0, stimulated=True,
+    damping=None, v_x=0.0, v_y=0.0,
 ):
     """emis and eta at one depth point for a mean field plus an unresolved isotropic component.
 
@@ -350,6 +362,7 @@ def point_emission_and_propagation_unresolved(
         e, h = point_emission_and_propagation(
             JKQ, line, mu, phi, nu, T, n_l, b, t, c, v_los, vmic, D2, C_ul,
             gamma=gamma, rho_sign=rho_sign, chi_c=chi_c, stimulated=stimulated,
+            damping=damping, v_x=v_x, v_y=v_y,
         )
         emis = emis + w * e
         eta = eta + w * h
@@ -359,7 +372,7 @@ def point_emission_and_propagation_unresolved(
 def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True):
     """Fill grid.emis and grid.eta from grid.JKQ, atmosphere, and line properties.
 
-    The line supplies depth-dependent n_l and C_ul (hence a depth-dependent photon
+    The line state supplies depth-dependent n_l, D2 and C_ul (hence a depth-dependent photon
     destruction probability); the atmosphere supplies the thermodynamic, velocity,
     magnetic and continuum-opacity (chi_c) fields. Depths with atm.B_unres > 0 use
     the mean-plus-unresolved-field average
@@ -367,20 +380,25 @@ def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True
     field directly. n_theta, n_chi set the direction quadrature of that average.
     """
     a = grid.atm
+    state = grid.line_state
+    strength, inclination, azimuth = a.magnetic_angles()
+    damping = state.damping
     for k in range(a.N):
         if a.B_unres[k] > 0:
             grid.emis[k], grid.eta[k] = point_emission_and_propagation_unresolved(
                 grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
-                a.T[k], grid.line.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.B_unres[k],
-                a.v_los[k], a.vmic[k], a.D2[k], grid.line.C_ul[k],
+                a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.B_unres[k],
+                a.v_z[k], a.v_turb[k], state.D2[k], state.C_ul[k],
                 gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
-                chi_c=a.chi_c[k], stimulated=stimulated,
+                chi_c=a.chi_c[k], stimulated=stimulated, damping=damping[k],
+                v_x=a.v_x[k], v_y=a.v_y[k],
             )
             continue
         grid.emis[k], grid.eta[k] = point_emission_and_propagation(
             grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
-            a.T[k], grid.line.n_l[k], a.B[k], a.theta_B[k], a.chi_B[k], a.v_los[k], a.vmic[k],
-            a.D2[k], grid.line.C_ul[k], gamma=gamma, rho_sign=rho_sign,
-            chi_c=a.chi_c[k], stimulated=stimulated,
+            a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.v_z[k], a.v_turb[k],
+            state.D2[k], state.C_ul[k], gamma=gamma, rho_sign=rho_sign,
+            chi_c=a.chi_c[k], stimulated=stimulated, damping=damping[k],
+            v_x=a.v_x[k], v_y=a.v_y[k],
         )
     return grid

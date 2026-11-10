@@ -55,49 +55,75 @@ def tensor_basis_angles(theta, chi, gamma=0.0):
 
 
 def absorption_profile(grid):
-    """Normalized, unsplit Voigt absorption profile [depth, frequency, mu].
+    """Normalized, unsplit Voigt profile [depth, frequency, mu, phi].
 
     The profile is evaluated in the comoving frame using the same projected
     velocity shift as grid_opacity. Zeeman splitting is not included in the
     profile weighting of J^K_Q.
     """
-    dnu = grid.line.doppler_width(grid.atm.T, grid.atm.vmic)
-    a = grid.line.A_ul / (4.0 * np.pi * dnu)
+    dnu = grid.line_state.delta_nu_D
+    a = grid.line_state.damping
+    velocity = grid.atm.projected_velocity(grid.mu, grid.phi)
     x = (
-        -grid.nu[None, :, None]
-        + grid.line.nu0 * grid.atm.v_los[:, None, None] * grid.mu[None, None, :] / C_LIGHT
-    ) / dnu[:, None, None]
-    prof = voigt_function(x, a[:, None, None]).real
-    norm = np.einsum("knm,n->km", prof, grid.w_nu)
+        -grid.nu[None, :, None, None]
+        + grid.line.nu0 * velocity[:, None, :, :] / C_LIGHT
+    ) / dnu[:, None, None, None]
+    prof = voigt_function(x, a[:, None, None, None]).real
+    norm = np.einsum("knmp,n->kmp", prof, grid.w_nu)
     if np.any(norm <= 0.0) or not np.all(np.isfinite(norm)):
         raise ValueError("frequency grid does not resolve a positive finite line-profile integral")
-    return prof / norm[:, None, :]
+    return prof / norm[:, None, :, :]
 
 
-def jkq_from_stokes(grid, stokes, basis=None, profile=None):
+def jkq_from_stokes(grid, stokes, basis=None, profile=None, gamma=0.0):
     """Profile-weighted J^K_Q(k) from Stokes [depth, IQUV, nu, mu, phi].
 
     A custom profile may have shape [depth, frequency] (shared by all rays) or
-    [depth, frequency, mu]. By default, use the local comoving Voigt profile.
+    [depth, frequency, mu], or [depth, frequency, mu, phi]. By default, use
+    the local comoving Voigt profile. The profile is normalized on the finite
+    frequency grid and neglects Zeeman splitting. gamma is the Stokes reference
+    angle, used when basis is not supplied; a custom basis takes precedence.
     Returns [depth, K, Q+2].
     """
     if basis is None:
-        basis = tensor_basis(grid.mu, grid.phi)
+        basis = tensor_basis(grid.mu, grid.phi, gamma=gamma)
     if profile is None:
         profile = absorption_profile(grid)
+    basis = np.asarray(basis)
     profile = np.asarray(profile)
+    stokes = np.asarray(stokes)
+    basis_shape = (4, 3, 5, len(grid.mu), len(grid.phi))
+    if basis.shape != basis_shape or not np.all(np.isfinite(basis)):
+        raise ValueError(f"basis must be finite with shape {basis_shape}")
+    if not np.all(np.isfinite(profile)):
+        raise ValueError("profile must be finite")
+    expected = (grid.atm.N, 4, len(grid.nu), len(grid.mu), len(grid.phi))
+    if stokes.shape != expected or not np.all(np.isfinite(stokes)):
+        raise ValueError(f"stokes must be finite with shape {expected}")
     w_ang = grid.w_mu[:, None] * grid.w_phi[None, :]
     if profile.shape == (grid.atm.N, len(grid.nu)):
         S = np.einsum("kinmp,kn,n,mp->kimp", stokes, profile, grid.w_nu, w_ang)
     elif profile.shape == (grid.atm.N, len(grid.nu), len(grid.mu)):
         S = np.einsum("kinmp,knm,n,mp->kimp", stokes, profile, grid.w_nu, w_ang)
+    elif profile.shape == (grid.atm.N, len(grid.nu), len(grid.mu), len(grid.phi)):
+        S = np.einsum("kinmp,knmp,n,mp->kimp", stokes, profile, grid.w_nu, w_ang)
     else:
         raise ValueError(
             "profile must have shape "
             f"({grid.atm.N}, {len(grid.nu)}) or "
-            f"({grid.atm.N}, {len(grid.nu)}, {len(grid.mu)}), got {profile.shape}"
+            f"({grid.atm.N}, {len(grid.nu)}, {len(grid.mu)}) or "
+            f"({grid.atm.N}, {len(grid.nu)}, {len(grid.mu)}, {len(grid.phi)}), got {profile.shape}"
         )
     return np.einsum("iKQmp,kimp->kKQ", basis, S) / (4 * np.pi)
+
+
+def update_jkq_from_stokes(grid, stokes, basis=None, profile=None, gamma=0.0):
+    """Integrate a supplied Stokes field and store its tensor in an allocated grid.
+
+    This performs a quadrature, not a transfer solution or an iteration. gamma
+    must match the Stokes reference angle; a supplied basis takes precedence.
+    """
+    return grid.set_JKQ(jkq_from_stokes(grid, stokes, basis=basis, profile=profile, gamma=gamma))
 
 
 def rotate_tensor(rho_K, alpha, beta, gamma):
@@ -133,33 +159,35 @@ def solve_rho_point(JKQ, line, B, theta_B, chi_B, D2, C_ul=0.0, w2=1.0):
     rho^2_Q = w2 * [D H D^dagger J^2]_Q with the rank-2 relaxation
     1 + (C_ul + D2)/A + i Q Hu. w2 is the polarizability factor (1 for Ju=1, Jl=0).
     """
-    rho = np.zeros((3, 5), dtype=complex)
-    rho[0, 2] = JKQ[0, 2] / (1.0 + C_ul / line.A_ul)
-    Hu = 2 * np.pi * NU_LARMOR * B * line.gJu / line.A_ul
+    rho_matrix = np.zeros((3, 5), dtype=complex)
+    rho_matrix[0, 2] = JKQ[0, 2] / (1.0 + C_ul / line.A_ul)
+    Hu = 2 * np.pi * NU_LARMOR * B * line.g_u / line.A_ul
     H = hanle_operator_general(Hu, (D2 + C_ul) / line.A_ul, theta_B, chi_B)
-    rho[2] = w2 * (H @ JKQ[2])
-    return rho
+    rho_matrix[2] = w2 * (H @ JKQ[2])
+    return rho_matrix
 
 
 def solve_rho(grid, w2=1.0):
-    """Apply solve_rho_point at every depth, using grid.JKQ. Stores and returns grid.rho."""
+    """Apply solve_rho_point at every depth; store and return grid.rho_matrix."""
     a = grid.atm
+    strength, inclination, azimuth = a.magnetic_angles()
+    state = grid.line_state
     for k in range(a.N):
-        grid.rho[k] = solve_rho_point(
-            grid.JKQ[k], grid.line, a.B[k], a.theta_B[k], a.chi_B[k], a.D2[k],
-            grid.line.C_ul[k], w2
+        grid.rho_matrix[k] = solve_rho_point(
+            grid.JKQ[k], grid.line, strength[k], inclination[k], azimuth[k], state.D2[k],
+            state.C_ul[k], w2
         )
-    return grid.rho
+    return grid.rho_matrix
 
 
-def emissivity_from_rho_grid(rho, basis):
+def emissivity_from_rho_grid(rho_matrix, basis):
     """j_i(Omega) = sum_{K,Q} (-1)^Q T^K_Q(i, Omega) conj(rho^K_{-Q}).
 
     The conjugate follows the convention of Chapter_13_magnetic_branch_plots.py
-    (used by Special_cases.py). rho: [3, 5] at one point (or [N, 3, 5]); basis
+    (used by Special_cases.py). rho_matrix: [3, 5] at one point (or [N, 3, 5]); basis
     from tensor_basis. Returns [4, nmu, nphi] (or [N, 4, nmu, nphi]); real part.
     """
     phase = (-1.0) ** QS
-    rho_m = np.conj(rho[..., ::-1])  # conj(rho^K_{-Q})
+    rho_m = np.conj(rho_matrix[..., ::-1])  # conj(rho^K_{-Q})
     emis = np.einsum("iKQmp,...KQ->...imp", basis, phase * rho_m)
     return emis.real

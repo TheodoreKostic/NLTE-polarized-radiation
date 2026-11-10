@@ -4,14 +4,14 @@ Run from this directory with: python validate_continuum.py
 """
 import numpy as np
 
-from atmosphere import Atmosphere1D, Grid, LineModel, C_LIGHT, K_B
+from atmosphere import Atmosphere1D, Grid, LineModel, LineState, C_LIGHT, K_B
 from grid_opacity import (
     H_PLANCK, destruction_probability, fill_grid, planck, point_emission_and_propagation,
     point_emission_and_propagation_unresolved, stimulated_factor)
 
 NU0, A_UL = 6.5e14, 2e8
 DND = 1e9
-LINE = LineModel(NU0, A_UL, 1.0, 1.0, 1, 0, 40, n_l=np.ones(1), C_ul=np.zeros(1))
+LINE = LineModel(NU0, A_UL, 1.0, 1.0, 1, 0, 40)
 VMIC = DND * C_LIGHT / NU0
 NU = np.linspace(-6 * DND, 6 * DND, 121)
 MU, PHI = np.array([0.7]), np.array([0.3])
@@ -111,9 +111,8 @@ n = 3
 
 def atmosphere(**kw):
     return Atmosphere1D(
-        z=np.array([2.0, 1.0, 0.0]), T=np.array([4500.0, 6000.0, 7500.0]), B=np.zeros(n),
-        theta_B=np.zeros(n), chi_B=np.zeros(n), v_los=np.zeros(n), D2=np.zeros(n),
-        vmic=np.full(n, VMIC), **kw)
+        z=np.array([2.0, 1.0, 0.0]), T=np.array([4500.0, 6000.0, 7500.0]), B=np.zeros((n, 3)),
+        v_z=np.zeros(n), v_turb=np.full(n, VMIC), **kw)
 
 
 check("chi_c defaults to zero", np.abs(atmosphere().chi_c).max(), 1e-300)
@@ -126,9 +125,12 @@ for bad in ({"chi_c": np.array([0.0, -1e-6, 0.0])}, {"chi_c": np.zeros(2)}):
         raise AssertionError(f"invalid chi_c accepted: {bad}")
 
 chi_depth = np.array([0.0, 2e-6, 8e-6])
-line3 = LineModel(NU0, A_UL, 1.0, 1.0, 1, 0, 40, n_l=np.array([1.0, 2.0, 3.0]), C_ul=np.array([0.0, 1e7, 1e9]))
-grid_c = Grid.build(atmosphere(chi_c=chi_depth), line3, n_mu_half=2, n_phi=4, n_nu=41).allocate()
-grid_0 = Grid.build(atmosphere(), line3, n_mu_half=2, n_phi=4, n_nu=41).allocate()
+line3 = LineModel(NU0, A_UL, 1.0, 1.0, 1, 0, 40)
+atm_c, atm_0 = atmosphere(chi_c=chi_depth), atmosphere()
+state_c = LineState(atm_c, line3, np.array([1.0, 2.0, 3.0]), np.array([0.0, 1e7, 1e9]), np.zeros(n))
+state_0 = LineState(atm_0, line3, np.array([1.0, 2.0, 3.0]), np.array([0.0, 1e7, 1e9]), np.zeros(n))
+grid_c = Grid.build(atm_c, line3, state_c, n_mu_half=2, n_phi=4, n_nu=41).allocate()
+grid_0 = Grid.build(atm_0, line3, state_0, n_mu_half=2, n_phi=4, n_nu=41).allocate()
 for g in (grid_c, grid_0):
     g.JKQ[:, 0, 2] = 1.0
     fill_grid(g)
