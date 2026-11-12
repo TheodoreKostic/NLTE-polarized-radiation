@@ -11,9 +11,11 @@ tensor using grid.set_JKQ(), or use grid_tensors.update_jkq_from_stokes()
 with a previously calculated Stokes field. LineModel.calc_j(grid) evaluates
 the line emissivity; LineModel.calc_S(j, chi) divides it by a prescribed
 unpolarized opacity, and Grid.calc_tau(chi) calculates vertical optical depth
-for that same opacity. This does not solve radiative transfer or perform
-self-consistent iteration.
+for that same opacity. Grid.solve_rte_fs(source, tau) performs a formal I/Q/U
+solution for a fixed source; Grid.solve_rte_sc(chi) iterates the source and the
+radiation tensor to self-consistency (Lambda iteration with short characteristics).
 """
+import warnings
 from dataclasses import dataclass, fields
 
 import numpy as np
@@ -21,6 +23,18 @@ import numpy as np
 K_B = 1.380649e-16  # erg/K
 AMU = 1.66053907e-24  # g
 C_LIGHT = 2.99792458e10  # cm/s
+
+
+@dataclass
+class LambdaIterationResult:
+    """Outcome of Grid.solve_rte_sc.
+
+    history holds, per iteration, the largest change of any J^K_Q relative to
+    the local J^0_0.
+    """
+    iterations: int
+    converged: bool
+    history: np.ndarray
 
 
 def _frequency_opacity(chi, nnu):
@@ -150,6 +164,41 @@ class LineModel:
         return line_emissivity(grid, gamma=gamma, n_theta=n_theta, n_chi=n_chi,
                                stimulated=stimulated)
 
+    def calc_j_derivative(
+        self, grid, gamma=0.0, n_theta=8, n_chi=8,
+        stimulated=True, step=1e-3,
+    ):
+        """Return local d(j_I, j_Q, j_U)/d(B_x, B_y, B_z).
+
+        Shape: [depth, field_component, stokes, frequency, mu, phi].
+        Field components are in gauss; grid.JKQ is held fixed.
+        """
+        from dataclasses import replace
+
+        if not np.isfinite(step) or step <= 0:
+            raise ValueError("step must be finite and positive")
+
+        derivatives = []
+        for component in range(3):
+            samples = []
+            for sign in (-1.0, 1.0):
+                B = grid.atm.B.copy()
+                B[:, component] += sign * step
+
+                atm = replace(grid.atm, B=B)
+                state = replace(grid.line_state, atm=atm)
+                perturbed = replace(grid, atm=atm, line_state=state)
+                perturbed.JKQ = grid.JKQ
+
+                samples.append(self.calc_j(
+                    perturbed, gamma=gamma, n_theta=n_theta, n_chi=n_chi,
+                    stimulated=stimulated,
+                ))
+
+            derivatives.append((samples[1] - samples[0]) / (2 * step))
+
+        return np.stack(derivatives, axis=1)
+
     @staticmethod
     def calc_S(j, chi):
         """Return S_I, S_Q, S_U = j / chi for a prescribed unpolarized opacity.
@@ -274,6 +323,102 @@ class Grid:
             tau = (z[0] - z[:, None]) * chi[None, :]
         self.tau = tau
         return self.tau
+
+    def _default_boundaries(self):
+        """Dark top and unpolarized Planck bottom (at nu0, bottom temperature) boundaries."""
+        from grid_opacity import planck
+
+        shape = (3, len(self.nu), len(self.mu), len(self.phi))
+        top, bottom = np.zeros(shape), np.zeros(shape)
+        bottom[0] = planck(self.line.nu0, self.atm.T[-1])
+        return top, bottom
+
+    def solve_rte_fs(self, source, tau, top=None, bottom=None):
+        """Formal solution of I/Q/U transfer for a fixed source; stores it in grid.stokes.
+
+        source [depth, 3, frequency, mu, phi] and tau [depth, frequency]
+        can be obtained from line.calc_S and grid.calc_tau using the same chi.
+        The source is interpolated linearly between depth nodes. Incoming top
+        and bottom boundaries have shape [3, frequency, mu, phi]; by default
+        the top is dark and the bottom is unpolarized Planck radiation at nu0
+        and the bottom temperature. mu > 0 enters from the bottom. Returns
+        [depth, 3, frequency, mu, phi]; grid.stokes V is left unchanged.
+        The source is not updated from the result; see solve_rte_sc.
+        """
+        from formal_solver import solve_unpolarized_transfer
+
+        default_top, default_bottom = self._default_boundaries()
+        top = default_top if top is None else top
+        bottom = default_bottom if bottom is None else bottom
+        expected = (self.atm.N, 3, len(self.nu), len(self.mu), len(self.phi))
+        if np.shape(source) != expected:
+            raise ValueError(f"source must have shape {expected}")
+        result = solve_unpolarized_transfer(source, tau, self.mu, top, bottom)
+        self.stokes[:, :3] = result
+        return result
+
+    def solve_rte_sc(self, chi, top=None, bottom=None, JKQ0=None, gamma=0.0,
+                     n_theta=8, n_chi=8, stimulated=True, tol=1e-6, max_iter=500):
+        """Self-consistent I/Q/U solution by Lambda iteration with short characteristics.
+
+        Each iteration computes the emissivity from grid.JKQ (line.calc_j),
+        the source S = j / chi (line.calc_S), solves the transfer equations
+        with parabolic short characteristics, and replaces grid.JKQ by the
+        profile-weighted moments of the new Stokes field. chi [cm^-1, shape
+        (frequency,)] is the fixed unpolarized opacity, also used for tau
+        (calc_tau). S is the line source function only if chi equals the line
+        opacity eta_I; this is not checked. Boundaries are as in solve_rte_fs.
+        JKQ0 is the starting tensor [depth, 3, 5]; by default J^0_0 is the
+        Planck function at nu0 and J^2_Q is zero. gamma is the Stokes
+        reference angle. Convergence is the largest change of any J^K_Q
+        relative to the local J^0_0 and must fall below tol.
+        Plain Lambda iteration converges slowly in optically thick,
+        weakly collisional (small eps) media, so max_iter may be reached.
+        Stores I/Q/U in grid.stokes (V is untouched) and the tensor in
+        grid.JKQ, and returns a LambdaIterationResult.
+        """
+        from formal_solver import solve_short_characteristics
+        from grid_opacity import planck
+        from grid_tensors import absorption_profile, jkq_from_stokes, tensor_basis
+
+        if not np.isfinite(tol) or tol <= 0:
+            raise ValueError("tol must be finite and positive")
+        if int(max_iter) != max_iter or max_iter < 1:
+            raise ValueError("max_iter must be a positive integer")
+        shape = (self.atm.N, 3, len(self.nu), len(self.mu), len(self.phi))
+        default_top, default_bottom = self._default_boundaries()
+        top = default_top if top is None else top
+        bottom = default_bottom if bottom is None else bottom
+        tau = self.calc_tau(chi)
+        if JKQ0 is None:
+            JKQ0 = np.zeros((self.atm.N, 3, 5), dtype=complex)
+            JKQ0[:, 0, 2] = planck(self.line.nu0, self.atm.T)
+        self.set_JKQ(JKQ0)
+
+        basis = tensor_basis(self.mu, self.phi, gamma=gamma)
+        profile = absorption_profile(self)
+        stokes = np.zeros((self.atm.N, 4) + shape[2:])
+        history = []
+        converged = False
+        for _ in range(int(max_iter)):
+            j = self.line.calc_j(self, gamma=gamma, n_theta=n_theta, n_chi=n_chi,
+                                 stimulated=stimulated)
+            stokes[:, :3] = solve_short_characteristics(
+                self.line.calc_S(j, chi), tau, self.mu, top, bottom)
+            updated = jkq_from_stokes(self, stokes, basis=basis, profile=profile)
+            scale = np.maximum(np.abs(updated[:, 0, 2]), np.finfo(float).tiny)
+            history.append(np.max(np.abs(updated - self.JKQ) / scale[:, None, None]))
+            self.set_JKQ(updated)
+            if history[-1] < tol:
+                converged = True
+                break
+        self.stokes[:, :3] = stokes[:, :3]
+        if not converged:
+            warnings.warn(
+                f"Lambda iteration did not converge in {len(history)} iterations "
+                f"(last relative change {history[-1]:.3e} >= tol {tol:.1e})",
+                RuntimeWarning, stacklevel=2)
+        return LambdaIterationResult(len(history), converged, np.array(history))
 
     def set_JKQ(self, JKQ):
         """Set a prescribed depth-dependent radiation tensor [N, 3, 5]."""

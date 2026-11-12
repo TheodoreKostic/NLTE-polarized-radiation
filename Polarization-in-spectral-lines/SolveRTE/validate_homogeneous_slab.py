@@ -3,9 +3,11 @@
 Run from this directory with: python validate_homogeneous_slab.py
 """
 import numpy as np
-from scipy.integrate import solve_ivp
+from scipy.integrate import quad, solve_ivp
 
-from formal_solver import propagate_constant_slab, propagation_matrix
+from atmosphere import Atmosphere1D, Grid, LineModel, LineState
+from formal_solver import propagate_constant_slab, propagation_matrix, solve_unpolarized_transfer
+from grid_opacity import planck
 
 
 def check(name, actual, expected, tolerance=1e-11):
@@ -81,5 +83,113 @@ two_halves = propagate_constant_slab(
     emissivity, coefficients, distance / 2, first_half
 )
 check("homogeneous propagation composes across slab subdivisions", two_halves, coupled)
+
+atm = Atmosphere1D([4., 3.8, 1., 0.], [5000., 5200., 5500., 6000.],
+                   [0.] * 4, np.zeros((4, 3)))
+line = LineModel(6.5e14, 2e8, 1., 1., 1., 0., 40.)
+line_state = LineState(atm, line, [1.] * 4, [0.] * 4, [0.] * 4)
+grid = Grid.build(atm, line, line_state, n_mu_half=2, n_phi=2, n_nu=3).allocate()
+tau = grid.calc_tau([0.05, 0.5, 2.])
+shape = (3, len(grid.nu), len(grid.mu), len(grid.phi))
+intercept = np.arange(np.prod(shape)).reshape(shape) / 30 + 0.2
+slope = np.broadcast_to(np.array([0.2, -0.1, 0.05])[:, None, None, None], shape)
+source = intercept[None] + slope[None] * tau[:, None, :, None, None]
+top = np.full(shape, 0.7)
+bottom = np.full(shape, -0.3)
+grid.stokes[:, 3] = 9.
+actual = grid.solve_rte_fs(source, tau, top=top, bottom=bottom)
+expected = np.empty_like(actual)
+for m, ray_mu in enumerate(grid.mu):
+    boundary_depth = -1 if ray_mu > 0 else 0
+    boundary = bottom if ray_mu > 0 else top
+    for k in range(atm.N):
+        delta = np.abs(tau[k] - tau[boundary_depth]) / abs(ray_mu)
+        particular = source[k, :, :, m, :] + ray_mu * slope[:, :, m, :]
+        boundary_particular = (source[boundary_depth, :, :, m, :]
+                               + ray_mu * slope[:, :, m, :])
+        expected[k, :, :, m, :] = particular + (
+            boundary[:, :, m, :] - boundary_particular
+        ) * np.exp(-delta)[None, :, None]
+check("linear source and prescribed boundaries for both ray directions", actual, expected)
+check("grid stores I/Q/U solution", grid.stokes[:, :3], actual)
+check("grid leaves V untouched", grid.stokes[:, 3], np.full_like(grid.stokes[:, 3], 9.))
+
+zero_source = np.zeros_like(source)
+defaults = grid.solve_rte_fs(zero_source, tau)
+for m, ray_mu in enumerate(grid.mu):
+    if ray_mu < 0:
+        check("dark top boundary", defaults[:, :, :, m, :], np.zeros_like(defaults[:, :, :, m, :]))
+    else:
+        expected_i = planck(line.nu0, atm.T[-1]) * np.exp(-(tau[-1] - tau) / ray_mu)
+        np.testing.assert_allclose(
+            defaults[:, 0, :, m, :],
+            np.broadcast_to(expected_i[:, :, None], defaults[:, 0, :, m, :].shape),
+            rtol=1e-12, atol=0)
+        print("[PASS] thermal bottom boundary")
+        check("unpolarized bottom boundary", defaults[:, 1:, :, m, :],
+              np.zeros_like(defaults[:, 1:, :, m, :]))
+
+# For a source increasing linearly from zero to one, check thin and thick cells.
+for dt in (1e-12, 1e-3, 1e-2, 1e6):
+    cell_source = np.zeros((2, 3, 1, 1, 1))
+    cell_source[1] = 1.
+    cell_tau = np.array([[0.], [dt]])
+    boundary = np.zeros((3, 1, 1, 1))
+    result = solve_unpolarized_transfer(cell_source, cell_tau, [-1.], boundary, boundary)
+    expected_value = (dt * (1/2 + dt * (-1/6 + dt * (1/24 + dt * (
+        -1/120 + dt * (1/720 - dt/5040))))) if dt < 1 else 1 - 1 / dt)
+    np.testing.assert_allclose(result[1], expected_value, rtol=1e-11, atol=0)
+    print(f"[PASS] linear source in cell of optical thickness {dt:g}")
+
+one_source = np.zeros((1, 3, 1, 2, 1))
+one_top = np.full((3, 1, 2, 1), 2.)
+one_bottom = np.full_like(one_top, 3.)
+one_result = solve_unpolarized_transfer(one_source, [[0.]], [-0.5, 0.5], one_top, one_bottom)
+np.testing.assert_array_equal(one_result[0, :, :, 0], one_top[:, :, 0])
+np.testing.assert_array_equal(one_result[0, :, :, 1], one_bottom[:, :, 1])
+print("[PASS] single-depth grid preserves each incoming boundary")
+
+grid.JKQ[:, 0, 2] = 1.
+grid.JKQ[:, 2, 2] = 0.1
+emissivity = line.calc_j(grid)
+physical_source = line.calc_S(emissivity, [0.05, 0.5, 2.])
+zero_boundary = np.zeros(shape)
+physical_solution = grid.solve_rte_fs(physical_source, tau, top=zero_boundary, bottom=zero_boundary)
+m, f, p = len(grid.mu) - 1, 1, 0
+ray_mu = grid.mu[m]
+for i in range(3):
+    profile = physical_source[:, i, f, m, p]
+    integral = quad(
+        lambda t: np.interp(t, tau[:, f], profile) * np.exp(-t / ray_mu) / ray_mu,
+        0., tau[-1, f], points=tau[1:-1, f], epsabs=1e-30, epsrel=1e-11,
+    )[0]
+    reference = integral
+    np.testing.assert_allclose(physical_solution[0, i, f, m, p], reference,
+                               rtol=1e-11, atol=1e-25)
+print("[PASS] emissivity-to-source-to-transfer agrees with direct quadrature")
+
+for bad_tau in (np.ones((4, 2)), np.full_like(tau, np.nan), -tau, tau[::-1]):
+    try:
+        grid.solve_rte_fs(source, bad_tau, top=top, bottom=bottom)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid optical depth was accepted")
+try:
+    solve_unpolarized_transfer(source, tau, np.zeros_like(grid.mu), top, bottom)
+except ValueError:
+    pass
+else:
+    raise AssertionError("horizontal rays were accepted")
+bad_source = source.copy()
+bad_source[0, 0, 0, 0, 0] = np.nan
+for bad_s, bad_top in ((bad_source, top), (source, top[:, :, :-1])):
+    try:
+        grid.solve_rte_fs(bad_s, tau, top=bad_top, bottom=bottom)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("invalid source or boundary was accepted")
+print("[PASS] invalid optical depths, rays, sources and boundaries rejected")
 
 print("All homogeneous-slab checks passed.")
