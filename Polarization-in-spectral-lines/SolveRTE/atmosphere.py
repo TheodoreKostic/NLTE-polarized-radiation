@@ -8,8 +8,11 @@ J^K_Q and rho_matrix are indexed [depth, K, Q+2], Q=-2..2.
 Construct a LineState(atm, line, n_l, C_ul, D2) for each line in an
 atmosphere, then Grid.build(atm, line, line_state).allocate(). Supply a
 tensor using grid.set_JKQ(), or use grid_tensors.update_jkq_from_stokes()
-with a previously calculated Stokes field. This does not solve radiative
-transfer or perform self-consistent iteration.
+with a previously calculated Stokes field. LineModel.calc_j(grid) evaluates
+the line emissivity; LineModel.calc_S(j, chi) divides it by a prescribed
+unpolarized opacity, and Grid.calc_tau(chi) calculates vertical optical depth
+for that same opacity. This does not solve radiative transfer or perform
+self-consistent iteration.
 """
 from dataclasses import dataclass, fields
 
@@ -18,6 +21,15 @@ import numpy as np
 K_B = 1.380649e-16  # erg/K
 AMU = 1.66053907e-24  # g
 C_LIGHT = 2.99792458e10  # cm/s
+
+
+def _frequency_opacity(chi, nnu):
+    chi = np.asarray(chi)
+    if chi.shape != (nnu,) or not np.isrealobj(chi):
+        raise ValueError(f"chi must be real with shape ({nnu},)")
+    if not np.all(np.isfinite(chi)) or np.any(chi <= 0):
+        raise ValueError("chi must be finite and strictly positive")
+    return chi
 
 
 @dataclass
@@ -120,6 +132,42 @@ class LineModel:
         v2 = 2 * K_B * np.asarray(T) / (self.mass_amu * AMU) + np.asarray(v_turb) ** 2
         return self.nu0 * np.sqrt(v2) / C_LIGHT
 
+    def calc_j(self, grid, gamma=0.0, n_theta=8, n_chi=8, stimulated=True):
+        """Return line emissivity j_I, j_Q, j_U on an allocated grid.
+
+        The result has shape [depth, 3, frequency, mu, phi] and units
+        erg s^-1 cm^-3 Hz^-1 sr^-1. It excludes continuum emission and does
+        not modify the grid. JKQ must be supplied in the vertical frame.
+        The existing emission calculation supports J_l=0 -> J_u=1 only.
+        gamma is the Stokes reference angle; n_theta and n_chi set the
+        unresolved-field angular quadrature.
+        """
+        if grid.line is not self:
+            raise ValueError("grid must belong to this line")
+        if self.J_l != 0 or self.J_u != 1:
+            raise ValueError("calc_j supports only J_l=0 -> J_u=1")
+        from grid_opacity import line_emissivity
+        return line_emissivity(grid, gamma=gamma, n_theta=n_theta, n_chi=n_chi,
+                               stimulated=stimulated)
+
+    @staticmethod
+    def calc_S(j, chi):
+        """Return S_I, S_Q, S_U = j / chi for a prescribed unpolarized opacity.
+
+        j is the line emissivity from calc_j, shaped [depth, 3, frequency,
+        mu, phi]. chi [cm^-1] must be finite, strictly positive, and have
+        shape [frequency]; the same fixed opacity applies at all depths and
+        directions and to all three components. The result has the shape of
+        j and units erg s^-1 cm^-2 Hz^-1 sr^-1. No continuum emission is
+        added and neither input is modified.
+        """
+        j = np.asarray(j)
+        if j.ndim != 5 or j.shape[1] != 3 or not np.isrealobj(j) or not np.all(np.isfinite(j)):
+            raise ValueError("j must be real and finite with shape [depth, 3, frequency, mu, phi]")
+        chi = _frequency_opacity(chi, j.shape[2])
+        with np.errstate(over="raise", divide="raise", invalid="raise"):
+            return j / chi[None, None, :, None, None]
+
 
 @dataclass
 class LineState:
@@ -201,13 +249,31 @@ class Grid:
     def allocate(self):
         """Allocate radiation and coefficient arrays; JKQ is initially zero."""
         n, nmu, nphi, nnu = self.atm.N, len(self.mu), len(self.phi), len(self.nu)
-        self.tau = np.zeros(n)
+        self.tau = np.zeros((n, nnu))
         self.JKQ = np.zeros((n, 3, 5), dtype=complex)
         self.rho_matrix = np.zeros((n, 3, 5), dtype=complex)
         self.emis = np.zeros((n, 4, nnu, nmu, nphi))
         self.eta = np.zeros((n, 7, nnu, nmu, nphi))
         self.stokes = np.zeros((n, 4, nnu, nmu, nphi))
         return self
+
+    def calc_tau(self, chi):
+        """Store and return vertical optical depth [depth, frequency].
+
+        chi [cm^-1] is the fixed, unpolarized opacity at each frequency,
+        shared across all depths and directions, as in LineModel.calc_S.
+        The integral runs from z to the top grid point, where tau is zero.
+        z is in cm; tau is dimensionless and does not include a ray-angle
+        factor or opacity above the top grid point.
+        """
+        chi = _frequency_opacity(chi, len(self.nu))
+        z = self.atm.z
+        if z.shape != (self.atm.N,) or not np.all(np.isfinite(z)) or np.any(np.diff(z) >= 0):
+            raise ValueError("z must be finite and strictly decrease with index")
+        with np.errstate(over="raise", invalid="raise"):
+            tau = (z[0] - z[:, None]) * chi[None, :]
+        self.tau = tau
+        return self.tau
 
     def set_JKQ(self, JKQ):
         """Set a prescribed depth-dependent radiation tensor [N, 3, 5]."""

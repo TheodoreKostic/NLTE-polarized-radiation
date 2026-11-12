@@ -369,6 +369,42 @@ def point_emission_and_propagation_unresolved(
     return emis, eta
 
 
+def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, include_continuum):
+    """Yield emission and propagation coefficients at each depth."""
+    a = grid.atm
+    state = grid.line_state
+    strength, inclination, azimuth = a.magnetic_angles()
+    damping = state.damping
+    for k in range(a.N):
+        chi_c = a.chi_c[k] if include_continuum else 0.0
+        if a.B_unres[k] > 0:
+            yield point_emission_and_propagation_unresolved(
+                grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
+                a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.B_unres[k],
+                a.v_z[k], a.v_turb[k], state.D2[k], state.C_ul[k],
+                gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
+                chi_c=chi_c, stimulated=stimulated, damping=damping[k],
+                v_x=a.v_x[k], v_y=a.v_y[k],
+            )
+            continue
+        yield point_emission_and_propagation(
+            grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
+            a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.v_z[k], a.v_turb[k],
+            state.D2[k], state.C_ul[k], gamma=gamma, rho_sign=rho_sign,
+            chi_c=chi_c, stimulated=stimulated, damping=damping[k],
+            v_x=a.v_x[k], v_y=a.v_y[k],
+        )
+
+
+def line_emissivity(grid, gamma=0.0, n_theta=8, n_chi=8, stimulated=True):
+    """Return line-only I, Q, U emission [depth, 3, frequency, mu, phi]."""
+    return np.stack([
+        emis[:3] for emis, _ in _grid_coefficients(
+            grid, gamma, 1.0, n_theta, n_chi, stimulated, include_continuum=False
+        )
+    ])
+
+
 def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True):
     """Fill grid.emis and grid.eta from grid.JKQ, atmosphere, and line properties.
 
@@ -379,26 +415,8 @@ def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True
     (point_emission_and_propagation_unresolved); all others use the single mean
     field directly. n_theta, n_chi set the direction quadrature of that average.
     """
-    a = grid.atm
-    state = grid.line_state
-    strength, inclination, azimuth = a.magnetic_angles()
-    damping = state.damping
-    for k in range(a.N):
-        if a.B_unres[k] > 0:
-            grid.emis[k], grid.eta[k] = point_emission_and_propagation_unresolved(
-                grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
-                a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.B_unres[k],
-                a.v_z[k], a.v_turb[k], state.D2[k], state.C_ul[k],
-                gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
-                chi_c=a.chi_c[k], stimulated=stimulated, damping=damping[k],
-                v_x=a.v_x[k], v_y=a.v_y[k],
-            )
-            continue
-        grid.emis[k], grid.eta[k] = point_emission_and_propagation(
-            grid.JKQ[k], grid.line, grid.mu, grid.phi, grid.nu,
-            a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.v_z[k], a.v_turb[k],
-            state.D2[k], state.C_ul[k], gamma=gamma, rho_sign=rho_sign,
-            chi_c=a.chi_c[k], stimulated=stimulated, damping=damping[k],
-            v_x=a.v_x[k], v_y=a.v_y[k],
-        )
+    for k, (emis, eta) in enumerate(_grid_coefficients(
+        grid, gamma, rho_sign, n_theta, n_chi, stimulated, include_continuum=True
+    )):
+        grid.emis[k], grid.eta[k] = emis, eta
     return grid

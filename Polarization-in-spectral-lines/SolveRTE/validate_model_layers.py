@@ -131,6 +131,74 @@ emis, eta = point_emission_and_propagation_unresolved(
 check_scaled("unresolved field receives line state and velocities (emission)", grid.emis[0], emis)
 check_scaled("unresolved field receives line state and velocities (propagation)", grid.eta[0], eta)
 
+old_emis, old_eta = grid.emis.copy(), grid.eta.copy()
+j = line.calc_j(grid, gamma=0.3, n_theta=2, n_chi=2, stimulated=False)
+if j.shape != (n, 3, len(grid.nu), len(grid.mu), len(grid.phi)):
+    raise AssertionError(f"unexpected calc_j shape: {j.shape}")
+for k in range(n):
+    args = (prescribed[k], line, grid.mu, grid.phi, grid.nu, atm.T[k], state.n_l[k],
+            strength[k], theta[k], chi[k])
+    kwargs = dict(gamma=0.3, stimulated=False, damping=state.damping[k],
+                  v_x=atm.v_x[k], v_y=atm.v_y[k])
+    if atm.B_unres[k] > 0:
+        expected, _ = point_emission_and_propagation_unresolved(
+            *args, atm.B_unres[k], atm.v_z[k], atm.v_turb[k], state.D2[k], state.C_ul[k],
+            n_theta=2, n_chi=2, **kwargs)
+    else:
+        expected, _ = point_emission_and_propagation(
+            *args, atm.v_z[k], atm.v_turb[k], state.D2[k], state.C_ul[k], **kwargs)
+    for i, label in enumerate(("I", "Q", "U")):
+        check_scaled(f"line emissivity {label} at depth {k}", j[k, i], expected[i])
+check("calc_j leaves grid emission unchanged", grid.emis, old_emis)
+check("calc_j leaves grid propagation unchanged", grid.eta, old_eta)
+opacity = np.linspace(1e-8, 3e-8, len(grid.nu))
+source = line.calc_S(j, opacity)
+if source.shape != j.shape:
+    raise AssertionError(f"unexpected calc_S shape: {source.shape}")
+for i, label in enumerate(("I", "Q", "U")):
+    check_scaled(f"source function {label}", source[:, i],
+                 j[:, i] / opacity[None, :, None, None])
+check_scaled("source function recovers emissivity", source * opacity[None, None, :, None, None], j)
+for bad in (np.zeros(len(grid.nu)), -opacity, np.full(len(grid.nu), np.nan),
+            np.full(len(grid.nu), np.inf), opacity[:-1], opacity[:, None]):
+    rejects("calc_S rejects invalid opacity", lambda: line.calc_S(j, bad))
+rejects("calc_S rejects malformed emissivity", lambda: line.calc_S(j[:, :2], opacity))
+bad_j = j.copy()
+bad_j[0, 0, 0, 0, 0] = np.nan
+rejects("calc_S rejects non-finite emissivity", lambda: line.calc_S(bad_j, opacity))
+tau = grid.calc_tau(opacity)
+check_scaled("frequency-dependent optical depth", tau,
+             (atm.z[0] - atm.z)[:, None] * opacity[None, :])
+if tau.shape != (n, len(grid.nu)) or tau is not grid.tau:
+    raise AssertionError("calc_tau must store a [depth, frequency] array")
+np.testing.assert_array_equal(tau[0], 0.0)
+for bad in (np.zeros(len(grid.nu)), -opacity, np.full(len(grid.nu), np.nan),
+            np.full(len(grid.nu), np.inf), opacity[:-1], opacity[:, None]):
+    rejects("calc_tau rejects invalid opacity", lambda: grid.calc_tau(bad))
+check_scaled("invalid opacity leaves tau unchanged", grid.tau, tau)
+depth_atm = Atmosphere1D([10., 7., -2.], [5000.] * 3, [0.] * 3, np.zeros((3, 3)))
+depth_state = LineState(depth_atm, line, [1.] * 3, [0.] * 3, [0.] * 3)
+depth_grid = Grid.build(depth_atm, line, depth_state, n_nu=3).allocate()
+check("nonuniform depth optical depth", depth_grid.calc_tau([1., 2., 4.]),
+      [[0., 0., 0.], [3., 6., 12.], [12., 24., 48.]])
+depth_atm.z[1] = 11.
+rejects("calc_tau rejects non-monotonic mutated z", lambda: depth_grid.calc_tau([1., 2., 4.]))
+single_atm = Atmosphere1D([5.], [5000.], [0.], np.zeros((1, 3)))
+single_state = LineState(single_atm, line, [1.], [0.], [0.])
+single_grid = Grid.build(single_atm, line, single_state, n_nu=3).allocate()
+np.testing.assert_array_equal(single_grid.calc_tau([1., 2., 4.]), np.zeros((1, 3)))
+print("[PASS] single-depth optical depth is zero")
+state.n_l[1] = 0.0
+np.testing.assert_array_equal(line.calc_j(grid, n_theta=2, n_chi=2)[1], 0.0)
+print("[PASS] calc_j excludes continuum")
+state.n_l[1] = 2e8
+other_line = LineModel(line.nu0, line.A_ul, line.g_u, line.g_l, 1, 0, line.mass_amu)
+rejects("calc_j rejects a grid for another line", lambda: other_line.calc_j(grid))
+unsupported = LineModel(line.nu0, line.A_ul, line.g_u, line.g_l, 2, 1, line.mass_amu)
+unsupported_state = LineState(atm, unsupported, state.n_l, state.C_ul, state.D2)
+unsupported_grid = Grid.build(atm, unsupported, unsupported_state, n_nu=3).allocate()
+rejects("calc_j rejects unsupported transition", lambda: unsupported.calc_j(unsupported_grid))
+
 stokes = np.zeros_like(grid.stokes)
 stokes[:, 0] = 2.
 integrated = update_jkq_from_stokes(grid, stokes)
