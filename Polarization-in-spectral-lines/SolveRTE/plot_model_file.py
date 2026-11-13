@@ -41,7 +41,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from atmosphere import AMU, C_LIGHT, K_B, Atmosphere1D, Grid, LineModel, LineState
-from formal_solver import solve_short_characteristics, solve_unpolarized_transfer
 from grid_opacity import fill_grid, planck
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots_model")
@@ -193,6 +192,278 @@ def panels(x, curves, xlabel, names, title, path, logx):
     plt.close(fig)
 
 
+def plot_spectrum_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
+    """Plot emergent I and fractional Q/I, U/I vs frequency for each viewing angle.
+
+    Parameters
+    ----------
+    nu : array
+        Frequency offsets from line center [Hz]
+    stokes : array
+        Stokes array [depth, IQU, frequency, mu, phi]; depth 0 is the top
+    scale : float
+        Conversion factor to units
+    unit : str
+        Unit label
+    mu : array
+        Cosine of viewing angles
+    outdir : str
+        Output directory
+    label_prefix : str
+        Prefix for filenames
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    for k, mu_val in enumerate(mu):
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        values = stokes_percent(scale * stokes[0, :3, :, k, 0])
+
+        for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
+            ax.plot(nu / 1e9, values[i], color=f"C{k}")
+            ax.set_xlabel("Frequency offset from line center [GHz]")
+            ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
+            ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
+            ax.grid(alpha=0.3)
+
+        fig.suptitle(f"Emergent spectra at μ={mu_val:.2f}")
+        filename = f"spectrum_freq_mu_{mu_val:.2f}.png"
+        if label_prefix:
+            filename = f"{label_prefix}_{filename}"
+        fig.savefig(os.path.join(outdir, filename), dpi=150)
+        plt.close(fig)
+
+
+def plot_spectrum_normalized(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
+    """Plot normalized Q/I and U/I spectra vs frequency for all viewing angles.
+
+    Parameters
+    ----------
+    nu : array
+        Frequency offsets from line center [Hz]
+    stokes : array
+        Stokes array [depth, IQU, frequency, mu, phi]; depth 0 is the top
+    scale : float
+        Conversion factor to units
+    unit : str
+        Unit label
+    mu : array
+        Cosine of viewing angles
+    outdir : str
+        Output directory
+    label_prefix : str
+        Prefix for filenames
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    for k, mu_val in enumerate(mu):
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), constrained_layout=True)
+
+        values = stokes_percent(scale * stokes[0, :3, :, k, 0])
+
+        for ax, data, label in zip(axes, values[1:], ['Q/I', 'U/I']):
+            ax.plot(nu / 1e9, data, color=f"C{k}")
+            ax.set_xlabel("Frequency offset from line center [GHz]")
+            ax.set_ylabel(f"{label} [%]")
+            ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
+            ax.grid(alpha=0.3)
+
+        fig.suptitle(f"Emergent normalized polarization at μ={mu_val:.2f}")
+        filename = f"spectrum_normalized_mu_{mu_val:.2f}.png"
+        if label_prefix:
+            filename = f"{label_prefix}_{filename}"
+        fig.savefig(os.path.join(outdir, filename), dpi=150)
+        plt.close(fig)
+
+
+def plot_spectrum_wavelength(nu, stokes, scale, unit, mu, line, outdir, label_prefix=""):
+    """Plot emergent I and fractional Q/I, U/I vs wavelength for each viewing angle.
+
+    Parameters
+    ----------
+    nu : array
+        Frequency offsets from line center [Hz]
+    stokes : array
+        Stokes array [depth, IQU, frequency, mu, phi]; depth 0 is the top
+    scale : float
+        Conversion factor to units
+    unit : str
+        Unit label
+    mu : array
+        Cosine of viewing angles
+    line : LineModel
+        Line model with the line-center frequency nu0 [Hz]
+    outdir : str
+        Output directory
+    label_prefix : str
+        Prefix for filenames
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    absolute_nu = line.nu0 + nu
+    if np.any(absolute_nu <= 0):
+        raise ValueError("line-center frequency plus offsets must be positive")
+    lam_nm = C_LIGHT / absolute_nu * 1e7  # wavelength in nm
+    sort_idx = np.argsort(lam_nm)
+    lam_sorted = lam_nm[sort_idx]
+
+    for k, mu_val in enumerate(mu):
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        values = stokes_percent(scale * stokes[0, :3, :, k, 0])
+
+        for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
+            ax.plot(lam_sorted, values[i, sort_idx], color=f"C{k}")
+            ax.set_xlabel("Wavelength [nm]")
+            ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
+            ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
+            ax.grid(alpha=0.3)
+
+        fig.suptitle(f"Emergent spectra (wavelength) at μ={mu_val:.2f}")
+        filename = f"spectrum_wavelength_mu_{mu_val:.2f}.png"
+        if label_prefix:
+            filename = f"{label_prefix}_{filename}"
+        fig.savefig(os.path.join(outdir, filename), dpi=150)
+        plt.close(fig)
+
+
+def plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, label_prefix=""):
+    """Plot emergent I and fractional Q/I, U/I vs Doppler-width frequency offset.
+
+    Parameters
+    ----------
+    nu : array
+        Frequency offsets from line center [Hz]
+    stokes : array
+        Stokes array [depth, IQU, frequency, mu, phi]; depth 0 is the top
+    scale : float
+        Conversion factor to units
+    unit : str
+        Unit label
+    mu : array
+        Cosine of viewing angles
+    dnu_ref : float
+        Reference Doppler width [Hz]
+    line : LineModel
+        Line model with nu0 (line center frequency)
+    outdir : str
+        Output directory
+    label_prefix : str
+        Prefix for filenames
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    delta_nu = nu / dnu_ref
+
+    for k, mu_val in enumerate(mu):
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        values = stokes_percent(scale * stokes[0, :3, :, k, 0])
+
+        for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
+            ax.plot(delta_nu, values[i], color=f"C{k}")
+            ax.set_xlabel("Frequency offset [Doppler widths]")
+            ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
+            ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
+            ax.grid(alpha=0.3)
+
+        fig.suptitle(f"Emergent spectra (Doppler) at μ={mu_val:.2f}")
+        filename = f"spectrum_doppler_mu_{mu_val:.2f}.png"
+        if label_prefix:
+            filename = f"{label_prefix}_{filename}"
+        fig.savefig(os.path.join(outdir, filename), dpi=150)
+        plt.close(fig)
+
+
+def plot_all_mu_spectra_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
+    """Plot I, Q/I, U/I spectra with all viewing angles overlaid (frequency axis).
+
+    Parameters
+    ----------
+    nu : array
+        Frequency offsets from line center [Hz]
+    stokes : array
+        Stokes array [depth, IQU, frequency, mu, phi]; depth 0 is the top
+    scale : float
+        Conversion factor to units
+    unit : str
+        Unit label
+    mu : array
+        Cosine of viewing angles
+    outdir : str
+        Output directory
+    label_prefix : str
+        Prefix for filenames
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+    spectra = [stokes_percent(scale * stokes[0, :3, :, k, 0]) for k in range(len(mu))]
+
+    for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
+        for k, mu_val in enumerate(mu):
+            ax.plot(nu / 1e9, spectra[k][i],
+                   label=f"μ={mu_val:.2f}", color=f"C{k}")
+        ax.set_xlabel("Frequency offset from line center [GHz]")
+        ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
+        ax.set_title(f"{label} spectra")
+        ax.legend(fontsize=8, loc='best')
+        ax.grid(alpha=0.3)
+
+    fig.suptitle("Emergent spectra for different viewing angles")
+    filename = "spectrum_all_mu_frequency.png"
+    if label_prefix:
+        filename = f"{label_prefix}_{filename}"
+    fig.savefig(os.path.join(outdir, filename), dpi=150)
+    plt.close(fig)
+
+
+def plot_all_mu_spectra_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, label_prefix=""):
+    """Plot I, Q/I, U/I spectra with all viewing angles overlaid (Doppler axis).
+
+    Parameters
+    ----------
+    nu : array
+        Frequency offsets from line center [Hz]
+    stokes : array
+        Stokes array [depth, IQU, frequency, mu, phi]; depth 0 is the top
+    scale : float
+        Conversion factor to units
+    unit : str
+        Unit label
+    mu : array
+        Cosine of viewing angles
+    dnu_ref : float
+        Reference Doppler width [Hz]
+    line : LineModel
+        Line model with nu0 (line center frequency)
+    outdir : str
+        Output directory
+    label_prefix : str
+        Prefix for filenames
+    """
+    os.makedirs(outdir, exist_ok=True)
+
+    delta_nu = nu / dnu_ref
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+    spectra = [stokes_percent(scale * stokes[0, :3, :, k, 0]) for k in range(len(mu))]
+
+    for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
+        for k, mu_val in enumerate(mu):
+            ax.plot(delta_nu, spectra[k][i],
+                   label=f"μ={mu_val:.2f}", color=f"C{k}")
+        ax.set_xlabel("Frequency offset [Doppler widths]")
+        ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
+        ax.set_title(f"{label} spectra")
+        ax.legend(fontsize=8, loc='best')
+        ax.grid(alpha=0.3)
+
+    fig.suptitle("Emergent spectra for different viewing angles (Doppler)")
+    filename = "spectrum_all_mu_doppler.png"
+    if label_prefix:
+        filename = f"{label_prefix}_{filename}"
+    fig.savefig(os.path.join(outdir, filename), dpi=150)
+    plt.close(fig)
+
+
 DEFAULT_MODEL = "sr4607_falc_Jbar_anisotropy.txt"
 
 
@@ -253,6 +524,8 @@ def build_grid(col, line, v_turb, mu, nu, w_nu, chi_c, gamma):
 
 def transfer(source, tau, mu, line, T_bottom, bottom_I, solver):
     """I, Q, U [depth, 3, frequency, mu, 1]: dark top, unpolarized bottom (Planck by default)."""
+    from formal_solver import solve_short_characteristics, solve_unpolarized_transfer
+
     shape = (3, source.shape[2], len(mu), 1)
     top, bottom = np.zeros(shape), np.zeros(shape)
     bottom[0] = planck(line.nu0, T_bottom) if bottom_I is None else bottom_I
@@ -396,6 +669,23 @@ def main():
         panels(tau_c[:, centre], rays(stokes_c, f, stokes_ratios=True), label, stokes_names,
                title("Stokes solution (line + continuum)", f, offset),
                os.path.join(args.outdir, f"stokes_continuum_vs_tau_{tag}.png"), True)
+
+    # Spectrum plots (line only)
+    plot_spectrum_frequency(nu, stokes, scale, unit, mu, args.outdir, label_prefix="line")
+    plot_spectrum_normalized(nu, stokes, scale, unit, mu, args.outdir, label_prefix="line")
+    plot_spectrum_wavelength(nu, stokes, scale, unit, mu, line, args.outdir, label_prefix="line")
+    plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="line")
+    plot_all_mu_spectra_frequency(nu, stokes, scale, unit, mu, args.outdir, label_prefix="line")
+    plot_all_mu_spectra_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="line")
+
+    # Spectrum plots (line + continuum)
+    plot_spectrum_frequency(nu, stokes_c, scale, unit, mu, args.outdir, label_prefix="continuum")
+    plot_spectrum_normalized(nu, stokes_c, scale, unit, mu, args.outdir, label_prefix="continuum")
+    plot_spectrum_wavelength(nu, stokes_c, scale, unit, mu, line, args.outdir, label_prefix="continuum")
+    plot_spectrum_doppler(nu, stokes_c, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="continuum")
+    plot_all_mu_spectra_frequency(nu, stokes_c, scale, unit, mu, args.outdir, label_prefix="continuum")
+    plot_all_mu_spectra_doppler(nu, stokes_c, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="continuum")
+
     print(f"plots written to {args.outdir}")
     if args.show:
         plt.show()

@@ -1,6 +1,7 @@
 """Formal solution helpers for polarized radiative transfer."""
 import numpy as np
 from scipy.linalg import expm
+from numba import jit
 
 
 def propagation_matrix(coefficients):
@@ -58,3 +59,174 @@ def propagate_constant_slab(emissivity, coefficients, distance, incident):
     augmented[:4, 4] = emissivity
     result = expm(augmented * distance) @ np.append(incident, 1.0)
     return result[:4]
+
+
+@jit(nopython=True)
+def short_characteristics(tau, S, mu, I_boundary):
+    """Parabolic short-characteristics sweep for one ray and scalar source."""
+    ND = S.shape[0]
+    begin = ND - 1
+    end = -1
+    step = -1
+    if mu < 0:
+        begin = 0
+        end = ND
+        step = 1
+
+    I = np.zeros(ND)
+    L = np.zeros(ND)
+    I[begin] = I_boundary
+
+    for d in range(begin + step, end - step, step):
+        delta_u = (tau[d - step] - tau[d]) / mu
+        delta_d = (tau[d] - tau[d + step]) / mu
+        expd = np.exp(-delta_u)
+
+        if delta_u <= 0.01:
+            du = delta_u
+            w0 = du * (
+                1.0 - du / 2.0 + du**2 / 6.0 - du**3 / 24.0 + du**4 / 120.0
+                - du**5 / 720.0 + du**6 / 5040.0 - du**7 / 40320.0 + du**8 / 362880.0
+            )
+            w1 = du**2 * (
+                0.5 - du / 3.0 + du**2 / 8.0 - du**3 / 30.0 + du**4 / 144.0
+                - du**5 / 840.0 + du**6 / 5760.0 - du**7 / 45360.0 + du**8 / 403200.0
+            )
+            w2 = du**3 * (
+                1.0 / 3.0 - du / 4.0 + du**2 / 10.0 - du**3 / 36.0 + du**4 / 168.0
+                - du**5 / 960.0 + du**6 / 6480.0 - du**7 / 50400.0 + du**8 / 443520.0
+            )
+        else:
+            w0 = 1.0 - expd
+            w1 = w0 - delta_u * expd
+            w2 = 2.0 * w1 - delta_u**2 * expd
+
+        psi0 = w0 + (
+            w1 * (delta_u / delta_d - delta_d / delta_u)
+            - w2 * (1.0 / delta_d + 1.0 / delta_u)
+        ) / (delta_u + delta_d)
+        psiu = (w2 / delta_u + w1 * delta_d / delta_u) / (delta_u + delta_d)
+        psid = (w2 / delta_d - w1 * delta_u / delta_d) / (delta_u + delta_d)
+
+        I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d] + psid * S[d + step]
+        L[d] = psi0
+
+    d = end - step
+    delta_u = (tau[d - step] - tau[d]) / mu
+    expd = np.exp(-delta_u)
+    if delta_u < 0.01:
+        expd = 1.0 - delta_u + delta_u**2 / 2.0 - delta_u**3 / 6.0
+        psi0 = delta_u / 2.0 - delta_u**2 / 6.0 + delta_u**3 / 24.0
+        psiu = delta_u / 2.0 - delta_u**2 / 3.0 + delta_u**3 / 8.0
+    else:
+        psi0 = 1.0 - (1.0 - expd) / delta_u
+        psiu = -expd + (1.0 - expd) / delta_u
+
+    I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d]
+    L[d] = psi0
+    return I, L
+
+
+def _validate_transfer_inputs(source, tau, mu, top_bc, bottom_bc):
+    source = np.asarray(source, dtype=float)
+    tau = np.asarray(tau, dtype=float)
+    mu = np.asarray(mu, dtype=float)
+    top_bc = np.asarray(top_bc, dtype=float)
+    bottom_bc = np.asarray(bottom_bc, dtype=float)
+    if source.ndim != 5 or source.shape[0] < 2 or source.shape[1] != 3:
+        raise ValueError("source must have shape [depth >= 2, 3, frequency, mu, phi]")
+    nd, _, nf, nm, np_ = source.shape
+    if tau.shape != (nd, nf) or not np.all(np.isfinite(tau)) or np.any(np.diff(tau, axis=0) <= 0):
+        raise ValueError("tau must be finite, strictly increasing, and have shape [depth, frequency]")
+    if mu.shape != (nm,) or not np.all(np.isfinite(mu)) or np.any(mu == 0) or np.any(np.abs(mu) > 1):
+        raise ValueError("mu must be finite, nonzero, and in [-1, 1]")
+    if top_bc.shape != (3, nf, nm, np_) or bottom_bc.shape != top_bc.shape:
+        raise ValueError("boundary arrays must have shape [3, frequency, mu, phi]")
+    if not all(np.all(np.isfinite(a)) for a in (source, top_bc, bottom_bc)):
+        raise ValueError("source and boundary arrays must be finite")
+    return source, tau, mu, top_bc, bottom_bc
+
+
+def solve_short_characteristics(source, tau, mu, top_bc, bottom_bc):
+    """Solve radiative transfer for I, Q, U with parabolic short characteristics.
+
+    Uses the parabolic short-characteristics method (Hubeny & Mihalas) with
+    JIT-compilation for efficiency. Handles all three Stokes components.
+
+    Parameters
+    ----------
+    source : array
+        Source function [depth, 3, frequency, mu, phi]
+    tau : array
+        Optical depth [depth, frequency]
+    mu : array
+        Cosines of viewing angles
+    top_bc : array
+        Top boundary condition (dark, typically zeros) [3, frequency, mu, phi]
+    bottom_bc : array
+        Bottom boundary condition (Planck, typically) [3, frequency, mu, phi]
+
+    Returns
+    -------
+    stokes : array
+        Stokes I, Q, U [depth, 3, frequency, mu, phi]
+    """
+    source, tau, mu, top_bc, bottom_bc = _validate_transfer_inputs(
+        source, tau, mu, top_bc, bottom_bc
+    )
+    n_depth = source.shape[0]
+    n_stokes = 3
+    n_freq = source.shape[2]
+    n_mu = len(mu)
+    n_phi = source.shape[4]
+
+    # Initialize output array [depth, 3, frequency, mu, phi]
+    stokes = np.zeros((n_depth, n_stokes, n_freq, n_mu, n_phi), dtype=float)
+
+    # For each frequency, viewing angle, and azimuthal direction
+    for f in range(n_freq):
+        for k, mu_val in enumerate(mu):
+            for p in range(n_phi):
+                # Solve each Stokes component separately
+                for s in range(n_stokes):
+                    # Extract source function for this component [depth]
+                    S_src = source[:, s, f, k, p].copy()
+                    # Boundary condition at appropriate end
+                    S_bc = (bottom_bc if mu_val > 0 else top_bc)[s, f, k, p]
+
+                    # Solve using parabolic short characteristics
+                    stokes[:, s, f, k, p], _ = short_characteristics(
+                        tau[:, f], S_src, mu_val, S_bc
+                    )
+
+    return stokes
+
+
+def solve_unpolarized_transfer(source, tau, mu, top_bc, bottom_bc):
+    """Solve the uncoupled Stokes equations with a linear source in each cell."""
+    source, tau, mu, top_bc, bottom_bc = _validate_transfer_inputs(
+        source, tau, mu, top_bc, bottom_bc
+    )
+    result = np.empty_like(source)
+    for k, ray_mu in enumerate(mu):
+        step = -1 if ray_mu > 0 else 1
+        begin = source.shape[0] - 1 if ray_mu > 0 else 0
+        end = -1 if ray_mu > 0 else source.shape[0]
+        result[begin, :, :, k, :] = (bottom_bc if ray_mu > 0 else top_bc)[:, :, k, :]
+        for d in range(begin + step, end, step):
+            up = d - step
+            dt = np.abs(tau[d] - tau[up]) / abs(ray_mu)
+            expd = np.exp(-dt)
+            w0 = -np.expm1(-dt)
+            small = dt < 1e-3
+            up_weight = np.empty_like(dt)
+            x = dt[small]
+            up_weight[small] = x * (0.5 - x / 3 + x**2 / 8 - x**3 / 30 + x**4 / 144)
+            up_weight[~small] = w0[~small] / dt[~small] - expd[~small]
+            local_weight = w0 - up_weight
+            result[d, :, :, k, :] = (
+                expd[None, :, None] * result[up, :, :, k, :]
+                + up_weight[None, :, None] * source[up, :, :, k, :]
+                + local_weight[None, :, None] * source[d, :, :, k, :]
+            )
+    return result

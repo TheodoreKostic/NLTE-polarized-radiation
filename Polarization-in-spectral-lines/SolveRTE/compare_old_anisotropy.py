@@ -28,10 +28,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from numba import jit
-
 from atmosphere import Atmosphere1D, Grid, LineModel, LineState
-from formal_solver import propagate_constant_slab
+from formal_solver import propagate_constant_slab, short_characteristics
 from grid_tensors import jkq_from_stokes
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots_slab")
@@ -74,72 +72,6 @@ def old_sweep(S, tau, mu):
         e = np.exp(-(tau[i] - tau[i - 1]) / np.abs(mu[dn]))
         I[i, dn] = I[i - 1, dn] * e + S[i] * (1 - e)
     return I
-
-
-@jit(nopython=True)
-def short_characteristics(tau, S, mu, I_boundary):
-    """Parabolic short-characteristics sweep for one ray and scalar source."""
-    ND = S.shape[0]
-    begin = ND - 1
-    end = -1
-    step = -1
-    if mu < 0:
-        begin = 0
-        end = ND
-        step = 1
-
-    I = np.zeros(ND)
-    L = np.zeros(ND)
-    I[begin] = I_boundary
-
-    for d in range(begin + step, end - step, step):
-        delta_u = (tau[d - step] - tau[d]) / mu
-        delta_d = (tau[d] - tau[d + step]) / mu
-        expd = np.exp(-delta_u)
-
-        if delta_u <= 0.01:
-            du = delta_u
-            w0 = du * (
-                1.0 - du / 2.0 + du**2 / 6.0 - du**3 / 24.0 + du**4 / 120.0
-                - du**5 / 720.0 + du**6 / 5040.0 - du**7 / 40320.0 + du**8 / 362880.0
-            )
-            w1 = du**2 * (
-                0.5 - du / 3.0 + du**2 / 8.0 - du**3 / 30.0 + du**4 / 144.0
-                - du**5 / 840.0 + du**6 / 5760.0 - du**7 / 45360.0 + du**8 / 403200.0
-            )
-            w2 = du**3 * (
-                1.0 / 3.0 - du / 4.0 + du**2 / 10.0 - du**3 / 36.0 + du**4 / 168.0
-                - du**5 / 960.0 + du**6 / 6480.0 - du**7 / 50400.0 + du**8 / 443520.0
-            )
-        else:
-            w0 = 1.0 - expd
-            w1 = w0 - delta_u * expd
-            w2 = 2.0 * w1 - delta_u**2 * expd
-
-        psi0 = w0 + (
-            w1 * (delta_u / delta_d - delta_d / delta_u)
-            - w2 * (1.0 / delta_d + 1.0 / delta_u)
-        ) / (delta_u + delta_d)
-        psiu = (w2 / delta_u + w1 * delta_d / delta_u) / (delta_u + delta_d)
-        psid = (w2 / delta_d - w1 * delta_u / delta_d) / (delta_u + delta_d)
-
-        I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d] + psid * S[d + step]
-        L[d] = psi0
-
-    d = end - step
-    delta_u = (tau[d - step] - tau[d]) / mu
-    expd = np.exp(-delta_u)
-    if delta_u < 0.01:
-        expd = 1.0 - delta_u + delta_u**2 / 2.0 - delta_u**3 / 6.0
-        psi0 = delta_u / 2.0 - delta_u**2 / 6.0 + delta_u**3 / 24.0
-        psiu = delta_u / 2.0 - delta_u**2 / 3.0 + delta_u**3 / 8.0
-    else:
-        psi0 = 1.0 - (1.0 - expd) / delta_u
-        psiu = -expd + (1.0 - expd) / delta_u
-
-    I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d]
-    L[d] = psi0
-    return I, L
 
 
 def short_sweep(S, tau, mu):
