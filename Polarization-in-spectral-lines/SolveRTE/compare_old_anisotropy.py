@@ -28,6 +28,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+
 from atmosphere import Atmosphere1D, Grid, LineModel, LineState
 from formal_solver import propagate_constant_slab, short_characteristics
 from grid_tensors import jkq_from_stokes
