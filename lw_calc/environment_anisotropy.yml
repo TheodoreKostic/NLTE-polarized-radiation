@@ -1,0 +1,27 @@
+# Minimal conda environment for minimal_anisotropy.py
+# (Sr I 4607 radiation field anisotropy and populations in a 1D atmosphere, with Lightweaver).
+#
+# Files needed: this one, minimal_anisotropy.py and custom_atoms.py (in the same directory).
+#
+#   conda env create -f environment_anisotropy.yml
+#   conda activate lw_aniso
+#   python minimal_anisotropy.py        # a few seconds, writes sr4607_falc_Jbar_anisotropy.txt
+#
+# Without conda, in any Python 3.12 virtual environment:
+#   pip install lightweaver==0.16.1 numpy==2.3.0 scipy==1.18.1 numba==0.68.1
+#
+# Tested 2026-11-20 (Linux): a fresh env from this file reproduces the table bit-for-bit.
+# Lightweaver 0.16.1 has prebuilt wheels for Linux, macOS (Intel + Apple silicon) and Windows,
+# so no compiler is needed. The first run takes ~15 s (numba compiles), later runs ~2 s.
+#
+name: lw_aniso
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - numpy==2.3.0
+      - scipy==1.18.1
+      - numba==0.68.1
+      - lightweaver==0.16.1   # pulls the remaining dependencies automatically
