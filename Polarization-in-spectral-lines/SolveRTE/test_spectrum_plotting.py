@@ -64,14 +64,14 @@ class SpectrumPlotTests(unittest.TestCase):
                              for ax in fig.axes for curve in ax.lines])
 
         with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
-            plots.plot_spectrum_frequency(nu, stokes, 1, "unit", [0.5], outdir)
-            plots.plot_spectrum_normalized(nu, stokes, 1, "unit", [0.5], outdir)
+            plots.plot_spectrum_frequency(nu, stokes, 1, "unit", [0.5], line, outdir)
+            plots.plot_spectrum_normalized(nu, stokes, 1, "unit", [0.5], line, outdir)
             plots.plot_spectrum_wavelength(nu, stokes, 1, "unit", [0.5], line, outdir)
             plots.plot_spectrum_doppler(nu, stokes, 1, "unit", [0.5], 2e9, line, outdir)
-            plots.plot_all_mu_spectra_frequency(nu, stokes, 1, "unit", [0.5], outdir)
+            plots.plot_all_mu_spectra(nu, stokes, 1, "unit", [0.5], line, outdir)
             plots.plot_all_mu_spectra_doppler(nu, stokes, 1, "unit", [0.5], 2e9, line, outdir)
 
-        np.testing.assert_allclose(captured[0][0][0], [-2, 0, 2])
+        np.testing.assert_allclose(captured[0][0][0], [649998, 650000, 650002], rtol=0, atol=1e-8)
         np.testing.assert_allclose(captured[0][0][1], [1, 2, 3])
         np.testing.assert_allclose(captured[1][0][1], [10, 20, 30])
         for idx in (0, 3, 4, 5):
@@ -102,11 +102,11 @@ class SpectrumPlotTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
             calls = [
-                lambda: plots.plot_spectrum_frequency(nu, stokes, 2, "unit", [0.5, 1.0], outdir),
-                lambda: plots.plot_spectrum_normalized(nu, stokes, 2, "unit", [0.5, 1.0], outdir),
+                lambda: plots.plot_spectrum_frequency(nu, stokes, 2, "unit", [0.5, 1.0], line, outdir),
+                lambda: plots.plot_spectrum_normalized(nu, stokes, 2, "unit", [0.5, 1.0], line, outdir),
                 lambda: plots.plot_spectrum_wavelength(nu, stokes, 2, "unit", [0.5, 1.0], line, outdir),
                 lambda: plots.plot_spectrum_doppler(nu, stokes, 2, "unit", [0.5, 1.0], 1e9, line, outdir),
-                lambda: plots.plot_all_mu_spectra_frequency(nu, stokes, 2, "unit", [0.5, 1.0], outdir),
+                lambda: plots.plot_all_mu_spectra(nu, stokes, 2, "unit", [0.5, 1.0], line, outdir),
                 lambda: plots.plot_all_mu_spectra_doppler(nu, stokes, 2, "unit", [0.5, 1.0], 1e9, line, outdir),
             ]
             for call in calls:
@@ -124,6 +124,83 @@ class SpectrumPlotTests(unittest.TestCase):
             np.testing.assert_allclose(fig[1][1][0], [50, np.nan, 25], equal_nan=True)
             np.testing.assert_allclose(fig[1][1][1], [25, np.nan, 50], equal_nan=True)
             np.testing.assert_allclose(fig[2][1][1], [12.5, np.nan, -50], equal_nan=True)
+
+    def test_selected_axes_for_normalized_overlay_and_comparison(self):
+        nu = np.array([-2e9, 0., 2e9])
+        stokes = np.zeros((2, 3, 3, 1, 1))
+        stokes[:, 0, :, 0, 0] = [1., 2., 3.]
+        stokes[:, 1, :, 0, 0] = [0.1, 0.4, 0.9]
+        line = SimpleNamespace(nu0=6.5e14, lambda0=plots.C_LIGHT / 6.5e14)
+        figures = []
+
+        def capture(fig, path, *args, **kwargs):
+            figures.append((str(path), [(ax.get_xlabel(),
+                                         [(curve.get_xdata().copy(), curve.get_ydata().copy())
+                                          for curve in ax.lines]) for ax in fig.axes]))
+
+        with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
+            for axis in ("frequency", "wavelength"):
+                plots.plot_spectrum_normalized(nu, stokes, 1, "unit", [0.5], line, outdir, axis=axis)
+                plots.plot_all_mu_spectra(nu, stokes, 1, "unit", [0.5], line, outdir, axis=axis)
+                plots.plot_source_comparison(nu, stokes, stokes, 1, "unit", [0.5],
+                                             line, outdir, "line", axis=axis)
+        expected = {
+            "frequency": ((line.nu0 + nu) / 1e9, "Frequency [GHz]", [10, 20, 30]),
+            "wavelength": ((plots.C_LIGHT / (line.nu0 + nu) * 1e7)[::-1],
+                           "Wavelength [nm]", [30, 20, 10]),
+        }
+        for index, (path, axes) in enumerate(figures):
+            axis = "frequency" if index < 5 else "wavelength"
+            coordinate, xlabel, q = expected[axis]
+            self.assertIn(f"_{axis}", path)
+            for label, curves in axes:
+                self.assertEqual(label, xlabel)
+                np.testing.assert_allclose(curves[0][0], coordinate, rtol=0, atol=1e-8)
+            if index % 5 == 0:
+                np.testing.assert_allclose(axes[0][1][0][1], q)
+        with self.assertRaisesRegex(ValueError, "spectral axis"):
+            plots.spectral_coordinate(nu, line, "doppler")
+
+    def test_spectral_plots_have_readable_ticks(self):
+        nu = np.linspace(-20e9, 20e9, 31)
+        stokes = np.ones((1, 3, len(nu), 1, 1))
+        line = SimpleNamespace(nu0=650503.183e9, lambda0=plots.C_LIGHT / 650503.183e9)
+        captured = []
+
+        def capture(fig, *args, **kwargs):
+            fig.canvas.draw()
+            captured.append(fig)
+            self.assertEqual(tuple(fig.get_size_inches()),
+                             (12, 5.2) if len(fig.axes) == 2 else (15, 5.2))
+            for ax in fig.axes:
+                self.assertGreater(ax.xaxis.get_major_formatter().offset, 0)
+                self.assertTrue(ax.xaxis.get_offset_text().get_text().startswith("+"))
+                labels = [label for label in ax.get_xticklabels() if label.get_visible()]
+                self.assertTrue(all(label.get_rotation() == 0 for label in labels))
+                boxes = [label.get_window_extent() for label in labels]
+                self.assertGreater(len(boxes), 1)
+                self.assertFalse(any(a.overlaps(b) for a, b in zip(boxes, boxes[1:])))
+
+        with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
+            plots.plot_spectrum_frequency(nu, stokes, 1, "unit", [0.5], line, outdir)
+            plots.plot_spectrum_wavelength(nu, stokes, 1, "unit", [0.5], line, outdir)
+            for axis in ("frequency", "wavelength"):
+                plots.plot_spectrum_normalized(nu, stokes, 1, "unit", [0.5], line, outdir, axis=axis)
+                plots.plot_all_mu_spectra(nu, stokes, 1, "unit", [0.5], line, outdir, axis=axis)
+                plots.plot_source_comparison(nu, stokes, stokes, 1, "unit", [0.5],
+                                             line, outdir, "line", axis=axis)
+        self.assertEqual(len(captured), 12)
+
+    def test_spectral_ticks_with_small_absolute_values(self):
+        fig, ax = plots.plt.subplots()
+        try:
+            ax.plot([11.9, 12.1], [1, 2])
+            plots.format_spectral_axis(ax)
+            fig.canvas.draw()
+            self.assertEqual(ax.xaxis.get_major_formatter().offset, 12)
+            self.assertEqual(ax.xaxis.get_offset_text().get_text(), "+1.2e1")
+        finally:
+            plots.plt.close(fig)
 
 
 if __name__ == "__main__":

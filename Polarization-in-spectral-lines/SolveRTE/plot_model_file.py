@@ -11,9 +11,14 @@ n_lower and n_upper (m^-3),
 C_ul, epsilon and a_damp; the line wavelength, A_ul and Gamma_rad are read from
 its header. The model is unmagnetized and static. Elastic collisions (Q_elast)
 only broaden the line (through a_damp) and are not treated as depolarizing.
+Optional columns Jbar21_re, Jbar21_im, Jbar22_re, Jbar22_im provide the real
+and imaginary parts of the vertical-frame rank-2 moments in the same units as
+Jbar00 and Jbar20. Each absent column is zero; negative-Q components follow
+J^2_{-Q} = (-1)^Q conj(J^2_Q).
 
 Pipeline: the file's populations set the line opacity and isotropic emission;
-the existing radiation-tensor calculation supplies the aligned contribution.
+two-level radiative pumping supplies the aligned contribution (neglecting
+stimulated-emission effects on alignment and polarized propagation).
 The prescribed moments are not iterated to self-consistency. Comparison plots
 also show the original two-level epsilon/J source with the same opacity and
 boundaries, isolating the effect of the source prescription.
@@ -31,6 +36,9 @@ Two cases are plotted (the second one has "continuum" in its file names):
 Radiation quantities are plotted in SI (default, as in the file) or cgs units.
 Stokes plots show I and 100 Q/I, 100 U/I; source-function plots remain absolute.
 Anisotropy plots use the prescribed file moments, w = sqrt(2) Jbar20/Jbar00.
+--spectral-axis selects absolute frequency, wavelength, or both for spectral
+plots; the calculation still uses its frequency grid. Height and optical-depth
+plots retain their depth axes. Wavelength-axis plots retain per-Hz intensities.
 """
 import argparse
 import os
@@ -51,6 +59,7 @@ from grid_opacity import fill_grid, planck
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots_model")
 REQUIRED = ("height_km", "log_tau500", "T_K", "Jbar00", "Jbar20", "n_lower",
             "C_ul", "epsilon", "a_damp")
+J_COLUMNS = ("Jbar00", "Jbar20", "Jbar21_re", "Jbar21_im", "Jbar22_re", "Jbar22_im")
 W_TO_CGS = 1e3  # W m^-2 Hz^-1 sr^-1 -> erg s^-1 cm^-2 Hz^-1 sr^-1
 M3_TO_CM3 = 1e-6
 # factor from cgs to the plotted unit, and the unit label
@@ -76,6 +85,8 @@ def read_model(path):
             rows.append([float(item) for item in text.split()])
     if names is None or not rows:
         raise ValueError("no '# height_km ...' column-name line or no data rows found")
+    if len(set(names)) != len(names):
+        raise ValueError("model column names must be unique")
     if any(len(row) != len(names) for row in rows):
         raise ValueError("a data row does not match the number of column names")
     table = np.array(rows)
@@ -88,6 +99,33 @@ def read_model(path):
     if np.any(np.diff(model["height_km"]) >= 0):
         raise ValueError("rows must go from the top down (height strictly decreasing)")
     return model, "\n".join(header)
+
+
+def radiation_tensors_from_model(col):
+    """Build vertical-frame JKQ [depth, K, Q+2] from SI model columns."""
+    unknown = sorted(name for name in col if name.startswith("Jbar") and name not in J_COLUMNS)
+    if unknown:
+        raise ValueError(f"unsupported radiation tensor columns: {', '.join(unknown)}")
+    n = len(col["height_km"])
+    values = {}
+    for name in J_COLUMNS:
+        if name not in col:
+            if name in ("Jbar00", "Jbar20"):
+                raise ValueError(f"model must contain {name}")
+            values[name] = np.zeros(n)
+            continue
+        value = np.asarray(col[name])
+        if value.shape != (n,) or not np.isrealobj(value) or not np.all(np.isfinite(value)):
+            raise ValueError(f"{name} must be real and finite with shape ({n},)")
+        values[name] = value
+    jkq = np.zeros((n, 3, 5), complex)
+    jkq[:, 0, 2] = values["Jbar00"] * W_TO_CGS
+    jkq[:, 2, 2] = values["Jbar20"] * W_TO_CGS
+    for q in (1, 2):
+        positive = (values[f"Jbar2{q}_re"] + 1j * values[f"Jbar2{q}_im"]) * W_TO_CGS
+        jkq[:, 2, q + 2] = positive
+        jkq[:, 2, 2 - q] = (-1) ** q * np.conj(positive)
+    return jkq
 
 
 def header_value(header, pattern, override, name):
@@ -155,7 +193,7 @@ def radiation_anisotropy(col):
 def plot_anisotropy(x, anisotropy, xlabel, path, logx=False):
     """Plot the prescribed file-moment anisotropy on a height or optical-depth axis."""
     keep = x > 0 if logx else np.ones(len(x), bool)
-    fig, ax = plt.subplots(figsize=(6, 4), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(6, 5), constrained_layout=True)
     ax.plot(x[keep], anisotropy[keep])
     if logx:
         ax.set_xscale("log")
@@ -169,7 +207,7 @@ def plot_anisotropy(x, anisotropy, xlabel, path, logx=False):
 
 def panels(x, curves, xlabel, names, title, path, logx):
     keep = x > 0 if logx else np.ones(len(x), bool)
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
     for i, (ax, name) in enumerate(zip(axes, names)):
         values = []
         for label, color, y in curves:
@@ -197,7 +235,31 @@ def panels(x, curves, xlabel, names, title, path, logx):
     plt.close(fig)
 
 
-def plot_spectrum_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
+def spectral_coordinate(nu, line, axis):
+    """Return sorted physical spectral coordinates, their order, and axis label."""
+    absolute_nu = line.nu0 + np.asarray(nu)
+    if not np.all(np.isfinite(absolute_nu)) or np.any(absolute_nu <= 0):
+        raise ValueError("line-center frequency plus offsets must be finite and positive")
+    if axis == "frequency":
+        coordinate, xlabel = absolute_nu / 1e9, "Frequency [GHz]"
+    elif axis == "wavelength":
+        coordinate, xlabel = C_LIGHT / absolute_nu * 1e7, "Wavelength [nm]"
+    else:
+        raise ValueError("spectral axis must be 'frequency' or 'wavelength'")
+    order = np.argsort(coordinate)
+    return coordinate[order], order, xlabel
+
+
+def format_spectral_axis(ax):
+    """Keep absolute spectral coordinates readable on narrow panels."""
+    lower, upper = ax.get_xlim()
+    step = 10.0 ** np.ceil(np.log10(upper - lower))
+    offset = np.floor((lower + upper) / (2 * step)) * step
+    ax.ticklabel_format(axis="x", style="plain", useOffset=offset)
+    ax.tick_params(axis="x", labelrotation=0)
+
+
+def plot_spectrum_frequency(nu, stokes, scale, unit, mu, line, outdir, label_prefix=""):
     """Plot emergent I and fractional Q/I, U/I vs frequency for each viewing angle.
 
     Parameters
@@ -212,20 +274,24 @@ def plot_spectrum_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""
         Unit label
     mu : array
         Cosine of viewing angles
+    line : LineModel
+        Line model with the line-center frequency nu0 [Hz]
     outdir : str
         Output directory
     label_prefix : str
         Prefix for filenames
     """
     os.makedirs(outdir, exist_ok=True)
+    coordinate, order, xlabel = spectral_coordinate(nu, line, "frequency")
 
     for k, mu_val in enumerate(mu):
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
         values = stokes_percent(scale * stokes[0, :3, :, k, 0])
 
         for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
-            ax.plot(nu / 1e9, values[i], color=f"C{k}")
-            ax.set_xlabel("Frequency offset from line center [GHz]")
+            ax.plot(coordinate, values[i, order], color=f"C{k}")
+            ax.set_xlabel(xlabel)
+            format_spectral_axis(ax)
             ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
             ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
             ax.grid(alpha=0.3)
@@ -238,48 +304,53 @@ def plot_spectrum_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""
         plt.close(fig)
 
 
-def plot_source_comparison(nu, stokes, reference, scale, unit, mu, outdir, prefix):
+def plot_source_comparison(nu, stokes, reference, scale, unit, mu, line, outdir, prefix,
+                           axis="frequency"):
     """Compare population and epsilon/J sources with the same opacity."""
+    coordinate, order, xlabel = spectral_coordinate(nu, line, axis)
     for k, mu_val in enumerate(mu):
         population = denoise(scale * stokes[0, :3, :, k, 0])
         baseline = denoise(scale * reference[0, :3, :, k, 0])
         for normalized in (False, True):
-            fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+            fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
             arrays = (stokes_percent(population), stokes_percent(baseline)) if normalized else (population, baseline)
             labels = ("I", "Q/I", "U/I") if normalized else ("I", "Q", "U")
             for i, (ax, label) in enumerate(zip(axes, labels)):
                 for values, name in zip(arrays, ("Population source", "Two-level ε/J source")):
-                    ax.plot(nu / 1e9, values[i], label=name)
-                ax.set_xlabel("Frequency offset from line center [GHz]")
+                    ax.plot(coordinate, values[i, order], label=name)
+                ax.set_xlabel(xlabel)
+                format_spectral_axis(ax)
                 ax.set_ylabel(f"{label} [{unit if not normalized or i == 0 else '%'}]")
                 ax.grid(alpha=0.3)
             axes[0].legend()
             fig.suptitle(f"{prefix}: source comparison, μ={mu_val:.2f}")
             suffix = "percent" if normalized else "absolute"
-            fig.savefig(os.path.join(outdir, f"{prefix}_source_comparison_{suffix}_mu_{mu_val:.2f}.png"), dpi=150)
+            fig.savefig(os.path.join(outdir, f"{prefix}_source_comparison_{suffix}_{axis}_mu_{mu_val:.2f}.png"), dpi=150)
             plt.close(fig)
         p = stokes_percent(population)
         b = stokes_percent(baseline)
         delta_i = np.full_like(b[0], np.nan)
         np.divide(100 * (p[0] - b[0]), b[0], out=delta_i, where=b[0] > 0)
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
         for ax, values, label in zip(
             axes, (delta_i, p[1] - b[1], p[2] - b[2]),
             ("I difference / baseline [%]", "Q/I difference [percentage points]",
              "U/I difference [percentage points]"),
         ):
-            ax.plot(nu / 1e9, values)
+            ax.plot(coordinate, values[order])
             ax.axhline(0, color="black", linewidth=0.5)
-            ax.set_xlabel("Frequency offset from line center [GHz]")
+            ax.set_xlabel(xlabel)
+            format_spectral_axis(ax)
             ax.set_ylabel(label)
             ax.grid(alpha=0.3)
         fig.suptitle(f"{prefix}: population minus ε/J source, μ={mu_val:.2f}")
-        fig.savefig(os.path.join(outdir, f"{prefix}_source_difference_mu_{mu_val:.2f}.png"), dpi=150)
+        fig.savefig(os.path.join(outdir, f"{prefix}_source_difference_{axis}_mu_{mu_val:.2f}.png"), dpi=150)
         plt.close(fig)
 
 
-def plot_spectrum_normalized(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
-    """Plot normalized Q/I and U/I spectra vs frequency for all viewing angles.
+def plot_spectrum_normalized(nu, stokes, scale, unit, mu, line, outdir, label_prefix="",
+                             axis="frequency"):
+    """Plot normalized Q/I and U/I spectra for all viewing angles.
 
     Parameters
     ----------
@@ -293,27 +364,31 @@ def plot_spectrum_normalized(nu, stokes, scale, unit, mu, outdir, label_prefix="
         Unit label
     mu : array
         Cosine of viewing angles
+    line : LineModel
+        Line model with the line-center frequency nu0 [Hz]
     outdir : str
         Output directory
     label_prefix : str
         Prefix for filenames
     """
     os.makedirs(outdir, exist_ok=True)
+    coordinate, order, xlabel = spectral_coordinate(nu, line, axis)
 
     for k, mu_val in enumerate(mu):
-        fig, axes = plt.subplots(1, 2, figsize=(12, 4.2), constrained_layout=True)
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5.2), constrained_layout=True)
 
         values = stokes_percent(scale * stokes[0, :3, :, k, 0])
 
         for ax, data, label in zip(axes, values[1:], ['Q/I', 'U/I']):
-            ax.plot(nu / 1e9, data, color=f"C{k}")
-            ax.set_xlabel("Frequency offset from line center [GHz]")
+            ax.plot(coordinate, data[order], color=f"C{k}")
+            ax.set_xlabel(xlabel)
+            format_spectral_axis(ax)
             ax.set_ylabel(f"{label} [%]")
             ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
             ax.grid(alpha=0.3)
 
         fig.suptitle(f"Emergent normalized polarization at μ={mu_val:.2f}")
-        filename = f"spectrum_normalized_mu_{mu_val:.2f}.png"
+        filename = f"spectrum_normalized_{axis}_mu_{mu_val:.2f}.png"
         if label_prefix:
             filename = f"{label_prefix}_{filename}"
         fig.savefig(os.path.join(outdir, filename), dpi=150)
@@ -344,20 +419,16 @@ def plot_spectrum_wavelength(nu, stokes, scale, unit, mu, line, outdir, label_pr
     """
     os.makedirs(outdir, exist_ok=True)
 
-    absolute_nu = line.nu0 + nu
-    if np.any(absolute_nu <= 0):
-        raise ValueError("line-center frequency plus offsets must be positive")
-    lam_nm = C_LIGHT / absolute_nu * 1e7  # wavelength in nm
-    sort_idx = np.argsort(lam_nm)
-    lam_sorted = lam_nm[sort_idx]
+    lam_sorted, sort_idx, xlabel = spectral_coordinate(nu, line, "wavelength")
 
     for k, mu_val in enumerate(mu):
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
         values = stokes_percent(scale * stokes[0, :3, :, k, 0])
 
         for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
             ax.plot(lam_sorted, values[i, sort_idx], color=f"C{k}")
-            ax.set_xlabel("Wavelength [nm]")
+            ax.set_xlabel(xlabel)
+            format_spectral_axis(ax)
             ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
             ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
             ax.grid(alpha=0.3)
@@ -405,7 +476,7 @@ def plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, la
     delta_nu = nu / dnu_ref
 
     for k, mu_val in enumerate(mu):
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
         values = stokes_percent(scale * stokes[0, :3, :, k, 0])
 
         for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
@@ -415,8 +486,7 @@ def plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, la
             ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
             ax.grid(alpha=0.3)
 
-        fig.suptitle(f"Emergent spectra (Doppler) at μ={mu_val:.2f}\n"
-                     f"{doppler_width_label(dnu_ref, line)}")
+        fig.suptitle(f"Emergent spectra (Doppler) at μ={mu_val:.2f}")
         filename = f"spectrum_doppler_mu_{mu_val:.2f}.png"
         if label_prefix:
             filename = f"{label_prefix}_{filename}"
@@ -424,8 +494,9 @@ def plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, la
         plt.close(fig)
 
 
-def plot_all_mu_spectra_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
-    """Plot I, Q/I, U/I spectra with all viewing angles overlaid (frequency axis).
+def plot_all_mu_spectra(nu, stokes, scale, unit, mu, line, outdir, label_prefix="",
+                        axis="frequency"):
+    """Plot I, Q/I, U/I spectra with all viewing angles overlaid.
 
     Parameters
     ----------
@@ -439,28 +510,32 @@ def plot_all_mu_spectra_frequency(nu, stokes, scale, unit, mu, outdir, label_pre
         Unit label
     mu : array
         Cosine of viewing angles
+    line : LineModel
+        Line model with the line-center frequency nu0 [Hz]
     outdir : str
         Output directory
     label_prefix : str
         Prefix for filenames
     """
     os.makedirs(outdir, exist_ok=True)
+    coordinate, order, xlabel = spectral_coordinate(nu, line, axis)
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
     spectra = [stokes_percent(scale * stokes[0, :3, :, k, 0]) for k in range(len(mu))]
 
     for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
         for k, mu_val in enumerate(mu):
-            ax.plot(nu / 1e9, spectra[k][i],
+            ax.plot(coordinate, spectra[k][i, order],
                    label=f"μ={mu_val:.2f}", color=f"C{k}")
-        ax.set_xlabel("Frequency offset from line center [GHz]")
+        ax.set_xlabel(xlabel)
+        format_spectral_axis(ax)
         ax.set_ylabel(f"{label} [{unit if i == 0 else '%'}]")
         ax.set_title(f"{label} spectra")
         ax.legend(fontsize=8, loc='best')
         ax.grid(alpha=0.3)
 
     fig.suptitle("Emergent spectra for different viewing angles")
-    filename = "spectrum_all_mu_frequency.png"
+    filename = f"spectrum_all_mu_{axis}.png"
     if label_prefix:
         filename = f"{label_prefix}_{filename}"
     fig.savefig(os.path.join(outdir, filename), dpi=150)
@@ -495,7 +570,7 @@ def plot_all_mu_spectra_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outd
 
     delta_nu = nu / dnu_ref
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.2), constrained_layout=True)
     spectra = [stokes_percent(scale * stokes[0, :3, :, k, 0]) for k in range(len(mu))]
 
     for i, (ax, label) in enumerate(zip(axes, ['I', 'Q/I', 'U/I'])):
@@ -508,8 +583,7 @@ def plot_all_mu_spectra_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outd
         ax.legend(fontsize=8, loc='best')
         ax.grid(alpha=0.3)
 
-    fig.suptitle("Emergent spectra for different viewing angles (Doppler)\n"
-                 f"{doppler_width_label(dnu_ref, line)}")
+    fig.suptitle("Emergent spectra for different viewing angles (Doppler)")
     filename = "spectrum_all_mu_doppler.png"
     if label_prefix:
         filename = f"{label_prefix}_{filename}"
@@ -534,7 +608,7 @@ def parse_args():
     p.add_argument("model", nargs="?", default=DEFAULT_MODEL,
                    help=f"model atmosphere text file (default: {DEFAULT_MODEL})")
     p.add_argument("--outdir", default=OUT)
-    p.add_argument("--mu", type=float, nargs="+", default=[0.1, 0.33, 0.5, 0.75, 1.0])
+    p.add_argument("--mu", type=float, nargs="+", default=[0.01, 0.05, 0.1, 0.33, 0.5, 0.75, 1.0])
     p.add_argument("--offsets", type=float, nargs="+", default=[0.0, 3.0, 6.0],
                    help="frequency offsets of the Stokes plots, in minimum local Doppler widths")
     p.add_argument("--extent", type=float, default=12.0,
@@ -543,6 +617,8 @@ def parse_args():
     p.add_argument("--gamma-deg", type=float, default=90.0, help="Stokes reference angle (0: radial)")
     p.add_argument("--solver", choices=("sc", "fs"), default="sc",
                    help="sc: parabolic short characteristics; fs: exact linear-source propagation")
+    p.add_argument("--spectral-axis", choices=("frequency", "wavelength", "both"), default="both",
+                   help="spectral plot x-axis: absolute frequency, wavelength, or both (default)")
     p.add_argument("--units", choices=tuple(UNITS), default="si",
                    help="units of S and I in the plots: si (W m^-2 Hz^-1 sr^-1, default, as in the file)\n"
                         "or cgs (erg s^-1 cm^-2 Hz^-1 sr^-1)")
@@ -568,10 +644,7 @@ def build_grid(col, line, v_turb, mu, nu, w_nu, chi_c, gamma, use_populations=Fa
     # J^K_Q is supplied, so the angular weights are not used
     grid = Grid(atm, line, state, mu, np.full(len(mu), 2.0 / len(mu)),
                 np.zeros(1), np.full(1, 2 * np.pi), nu, w_nu).allocate()
-    jkq = np.zeros((n, 3, 5), complex)
-    jkq[:, 0, 2] = col["Jbar00"] * W_TO_CGS
-    jkq[:, 2, 2] = col["Jbar20"] * W_TO_CGS
-    grid.set_JKQ(jkq)
+    grid.set_JKQ(radiation_tensors_from_model(col))
     fill_grid(grid, gamma=gamma)
     return grid
 
@@ -688,9 +761,12 @@ def main():
           f"line + continuum {scale * stokes_c[:, 0].min():.3e} (should be >= 0)")
 
     os.makedirs(args.outdir, exist_ok=True)
-    plot_source_comparison(nu, stokes, stokes_baseline, scale, unit, mu, args.outdir, "line")
-    plot_source_comparison(nu, stokes_c, stokes_c_baseline, scale, unit, mu, args.outdir,
-                           "continuum")
+    spectral_axes = ("frequency", "wavelength") if args.spectral_axis == "both" else (args.spectral_axis,)
+    for axis in spectral_axes:
+        plot_source_comparison(nu, stokes, stokes_baseline, scale, unit, mu, line,
+                               args.outdir, "line", axis=axis)
+        plot_source_comparison(nu, stokes_c, stokes_c_baseline, scale, unit, mu, line,
+                               args.outdir, "continuum", axis=axis)
     height = col["height_km"]
     s_names = [rf"${s}$ [{unit}]" for s in ("S_I", "S_Q", "S_U")]
     stokes_names = [rf"$I$ [{unit}]", r"$Q/I$ [%]", r"$U/I$ [%]"]
@@ -703,8 +779,8 @@ def main():
     def offset_tag(offset):
         return f"{offset:g}_doppler_widths"
 
-    def title(what, f, offset):
-        return f"{what} at {nu[f] / 1e9:+.2f} GHz ({offset:g} Doppler widths) from line centre"
+    def title(what, f):
+        return f"{what} at {nu[f] / 1e9:+.2f} GHz from line centre"
 
     anisotropy = radiation_anisotropy(col)
     plot_anisotropy(height, anisotropy, "height [km]",
@@ -723,7 +799,7 @@ def main():
     for offset in args.offsets:
         f = int(np.argmin(np.abs(nu - offset * dnu_ref)))
         panels(tau[:, centre], rays(stokes, f, stokes_ratios=True), label, stokes_names,
-               title("Stokes solution (line only)", f, offset),
+               title("Stokes solution (line only)", f),
                os.path.join(args.outdir, f"stokes_vs_tau_{offset_tag(offset)}.png"), True)
 
     # line + continuum: S depends on frequency through chi_c / eta
@@ -731,30 +807,27 @@ def main():
     for offset in args.offsets:
         f = int(np.argmin(np.abs(nu - offset * dnu_ref)))
         tag = offset_tag(offset)
-        name = title("Source functions (line + continuum)", f, offset)
+        name = title("Source functions (line + continuum)", f)
         panels(tau_c[:, centre], rays(source_c, f), label, s_names, name,
                os.path.join(args.outdir, f"source_continuum_vs_tau_{tag}.png"), True)
         panels(height, rays(source_c, f), "height [km]", s_names, name,
                os.path.join(args.outdir, f"source_continuum_vs_z_{tag}.png"), False)
         panels(tau_c[:, centre], rays(stokes_c, f, stokes_ratios=True), label, stokes_names,
-               title("Stokes solution (line + continuum)", f, offset),
+               title("Stokes solution (line + continuum)", f),
                os.path.join(args.outdir, f"stokes_continuum_vs_tau_{tag}.png"), True)
 
-    # Spectrum plots (line only)
-    plot_spectrum_frequency(nu, stokes, scale, unit, mu, args.outdir, label_prefix="line")
-    plot_spectrum_normalized(nu, stokes, scale, unit, mu, args.outdir, label_prefix="line")
-    plot_spectrum_wavelength(nu, stokes, scale, unit, mu, line, args.outdir, label_prefix="line")
-    plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="line")
-    plot_all_mu_spectra_frequency(nu, stokes, scale, unit, mu, args.outdir, label_prefix="line")
-    plot_all_mu_spectra_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="line")
-
-    # Spectrum plots (line + continuum)
-    plot_spectrum_frequency(nu, stokes_c, scale, unit, mu, args.outdir, label_prefix="continuum")
-    plot_spectrum_normalized(nu, stokes_c, scale, unit, mu, args.outdir, label_prefix="continuum")
-    plot_spectrum_wavelength(nu, stokes_c, scale, unit, mu, line, args.outdir, label_prefix="continuum")
-    plot_spectrum_doppler(nu, stokes_c, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="continuum")
-    plot_all_mu_spectra_frequency(nu, stokes_c, scale, unit, mu, args.outdir, label_prefix="continuum")
-    plot_all_mu_spectra_doppler(nu, stokes_c, scale, unit, mu, dnu_ref, line, args.outdir, label_prefix="continuum")
+    for axis in spectral_axes:
+        for prefix, spectrum in (("line", stokes), ("continuum", stokes_c)):
+            if axis == "frequency":
+                plot_spectrum_frequency(nu, spectrum, scale, unit, mu, line, args.outdir,
+                                        label_prefix=prefix)
+            else:
+                plot_spectrum_wavelength(nu, spectrum, scale, unit, mu, line, args.outdir,
+                                         label_prefix=prefix)
+            plot_spectrum_normalized(nu, spectrum, scale, unit, mu, line, args.outdir,
+                                     label_prefix=prefix, axis=axis)
+            plot_all_mu_spectra(nu, spectrum, scale, unit, mu, line, args.outdir,
+                                label_prefix=prefix, axis=axis)
 
     print(f"plots written to {args.outdir}")
     if args.show:

@@ -51,6 +51,18 @@ class PhysicalFlowTests(unittest.TestCase):
                                                    (len(dz) + 1, len(self.mu))), rtol=1e-9)
         self.assertGreater(np.ptp(stokes[0, 0, :, 0, 0]), 0.01 * stokes[0, 0, 0, 0, 0])
 
+    def test_near_limb_ray_preserves_existing_ray_solutions(self):
+        wavelength = self.wavelength[::10]
+        for solver in ("sc", "delo"):
+            combined = physical_flow(self.col, self.line, self.v_turb, wavelength,
+                                     [0.01, 0.05, 0.1], continuum=False, solver=solver)[-1]
+            previous = physical_flow(self.col, self.line, self.v_turb, wavelength,
+                                     [0.1], continuum=False, solver=solver)[-1]
+            self.assertTrue(np.all(np.isfinite(combined)))
+            self.assertTrue(np.all(combined[0, 0] > 0))
+            np.testing.assert_allclose(combined[:, :, :, 2, :], previous[:, :, :, 0, :],
+                                       rtol=1e-12, atol=1e-20)
+
     def test_projected_velocity_changes_profile_and_ray_optical_depth(self):
         velocity = 3e5
         nu, x, _, tau, stokes = physical_flow(
@@ -130,6 +142,61 @@ class PhysicalFlowTests(unittest.TestCase):
         np.testing.assert_array_equal(delo[:, 3], 0.0)
         self.assertEqual(scalar.shape[1], 3)
 
+    def test_magnetic_delo_spectra_and_depth_dependent_fields(self):
+        wavelength = self.wavelength[::3]
+        n = len(self.col["height_km"])
+        zero = physical_flow(self.col, self.line, self.v_turb, wavelength, self.mu,
+                             solver="delo")
+        field = np.tile([40., 25., 30.], (n, 1))
+        magnetic = physical_flow(self.col, self.line, self.v_turb, wavelength, self.mu,
+                                 solver="delo", B=field, D2=np.zeros(n))
+        emergent = magnetic[-1][0, :, :, 0, 0]
+        self.assertTrue(np.all(np.isfinite(emergent)))
+        self.assertGreater(np.max(np.abs(emergent[2])), 1e-12 * np.max(emergent[0]))
+        self.assertGreater(np.max(np.abs(emergent[3])), 1e-12 * np.max(emergent[0]))
+        self.assertGreater(np.max(np.abs(emergent[1] - zero[-1][0, 1, :, 0, 0])),
+                           1e-8 * np.max(emergent[0]))
+        constant = physical_flow(self.col, self.line, self.v_turb, wavelength, self.mu,
+                                 solver="delo", B=[40., 25., 30.], D2=0.)
+        np.testing.assert_allclose(magnetic[-1], constant[-1], rtol=1e-12, atol=1e-30)
+        with self.assertRaisesRegex(ValueError, "require solver"):
+            physical_flow(self.col, self.line, self.v_turb, wavelength, self.mu, B=field)
+        with self.assertRaisesRegex(ValueError, "D2"):
+            physical_flow(self.col, self.line, self.v_turb, wavelength, self.mu, D2=-1.)
+
+    def test_each_optional_tensor_component_affects_emergent_polarization(self):
+        wavelength = self.wavelength[::5]
+        _, _, _, tau, stokes = physical_flow(
+            self.col, self.line, self.v_turb, wavelength, [0.5], solver="delo")
+        for name in ("Jbar21_re", "Jbar21_im", "Jbar22_re", "Jbar22_im"):
+            col = dict(self.col)
+            col[name] = self.col["Jbar00"] * 0.02
+            _, _, _, changed_tau, changed = physical_flow(
+                col, self.line, self.v_turb, wavelength, [0.5], solver="delo")
+            np.testing.assert_allclose(changed_tau, tau, rtol=1e-12)
+            difference = np.max(np.abs(changed[0, 1:3] - stokes[0, 1:3]))
+            self.assertGreater(difference, 1e-7 * np.max(stokes[0, 0]), name)
+
+    def test_unresolved_field_and_depolarization_flow(self):
+        col = {key: value[::20] for key, value in self.col.items()}
+        v_turb = self.v_turb[::20]
+        wavelength = self.wavelength[::5]
+        zero = physical_flow(col, self.line, v_turb, wavelength, [0.5],
+                             solver="delo", continuum=False)[-1]
+        damped = physical_flow(col, self.line, v_turb, wavelength, [0.5],
+                               D2=10 * self.line.A_ul, solver="delo", continuum=False)[-1]
+        random = physical_flow(col, self.line, v_turb, wavelength, [0.5], B_unres=50.,
+                               n_theta=4, n_chi=8, solver="delo", continuum=False)[-1]
+        self.assertLess(np.max(np.abs(damped[0, 1])), np.max(np.abs(zero[0, 1])) / 10)
+        self.assertTrue(np.all(np.isfinite(random)))
+        self.assertLess(np.max(np.abs(random[0, 3])), np.max(np.abs(random[0, 0])) * 1e-12)
+        self.assertGreater(np.max(np.abs(random[0, 1] - zero[0, 1])), 0.)
+        with self.assertRaisesRegex(ValueError, "require solver"):
+            physical_flow(col, self.line, v_turb, wavelength, [0.5], B_unres=1.)
+        with self.assertRaisesRegex(ValueError, "B_unres"):
+            physical_flow(col, self.line, v_turb, wavelength, [0.5],
+                          B_unres=-1., solver="delo", continuum=False)
+
     def test_inferred_continuum_tracks_tabulated_depth(self):
         baseline = continuum_from_line_center(self.col, self.line, self.v_turb)
         dz = -np.diff(self.col["height_km"] * 1e5)
@@ -148,24 +215,111 @@ class PhysicalFlowTests(unittest.TestCase):
         stokes[1, 0, :, 0, 0] = 100
         figures = []
         titles = []
+        paths = []
+        coordinates = []
 
-        def capture(fig, *args, **kwargs):
+        def capture(fig, path, *args, **kwargs):
             figures.append([[curve.get_ydata().copy() for curve in ax.lines] for ax in fig.axes])
             titles.append(fig._suptitle.get_text())
+            paths.append(str(path))
+            coordinates.append((fig.axes[0].get_xlabel(), fig.axes[0].lines[0].get_xdata().copy()))
 
         with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
-            plot_spectra(wavelength, nu, stokes, [0.5], self.line, self.width, outdir, False)
+            plot_spectra(wavelength, nu, stokes, [0.5], self.line, self.width, outdir, False,
+                         field_label="B=(40, 25, 30) G, D2=1e7 s^-1", B=[40., 25., 30.])
         expected = stokes[0, 0, :, 0, 0] / 1e3 * C_LIGHT / wavelength**2 * 1e-7
         np.testing.assert_allclose(figures[0][0][0], expected)
         np.testing.assert_allclose(figures[0][1][0], [10, 20, 30])
         np.testing.assert_allclose(figures[0][2][0], [-20, 10, 20])
         np.testing.assert_allclose(figures[1][0][0], [8e-3, 4e-3, 2e-3])
-        delta_nu_ref = self.line.nu0 * self.width / self.line.lambda0
+        self.assertEqual(len(figures), 2)
+        self.assertEqual(coordinates[0][0], "Wavelength [nm]")
+        np.testing.assert_allclose(coordinates[0][1], wavelength * 1e7, rtol=0, atol=1e-10)
+        self.assertEqual(coordinates[1][0], "Frequency [GHz]")
+        np.testing.assert_allclose(coordinates[1][1], np.sort(C_LIGHT / wavelength / 1e9),
+                                   rtol=0, atol=1e-8)
         for title in titles:
-            self.assertIn(f"{self.width * 1e7:.5g}", title)
-            self.assertIn(f"{delta_nu_ref / 1e9:.5g}", title)
-            self.assertIn("nm", title)
-            self.assertIn("GHz", title)
+            self.assertNotIn(r"\Delta", title)
+            self.assertNotIn("Doppler", title)
+            self.assertIn("B=(40, 25, 30) G, D2=1e7 s^-1", title)
+            self.assertIn("|B|=55.902 G, inclination=57.543692 deg, azimuth=32.005383 deg", title)
+        for path in paths:
+            self.assertTrue(path.endswith("_B55.901699G_inc57.543692deg_azi32.005383deg.png"))
+
+    def test_plot_field_angles_when_direction_is_undefined(self):
+        wavelength = self.wavelength[::15]
+        nu = C_LIGHT / wavelength - self.line.nu0
+        stokes = np.zeros((2, 4, len(wavelength), 1, 1))
+        stokes[:, 0] = 1.
+        with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig") as save:
+            for field in ([0., 0., 0.], [0., 0., -10.]):
+                plot_spectra(wavelength, nu, stokes, [0.5], self.line, self.width,
+                             outdir, False, B=field)
+            paths = [str(call.args[0]) for call in save.call_args_list]
+        self.assertIn("_B0.000000G_incNAdeg_aziNAdeg.png", paths[0])
+        self.assertIn("_B10.000000G_inc180.000000deg_aziNAdeg.png", paths[2])
+
+    def test_tiny_v_percent_is_zero_only_in_plots(self):
+        wavelength = self.wavelength[::5]
+        nu = C_LIGHT / wavelength - self.line.nu0
+        stokes = np.zeros((1, 4, len(wavelength), 1, 1))
+        stokes[0, 0, :, 0, 0] = 1.
+        original_v_percent = np.array([0.5e-15, -0.5e-15, 2e-15, -2e-15, 0., 0., 0.])
+        stokes[0, 3, :, 0, 0] = original_v_percent / 100
+        original = stokes.copy()
+        curves = []
+
+        def capture(fig, *args, **kwargs):
+            curves.append(fig.axes[3].lines[0].get_ydata().copy())
+
+        with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
+            plot_spectra(wavelength, nu, stokes, [0.05], self.line, self.width, outdir, False)
+        expected = np.array([0., 0., 2e-15, -2e-15, 0., 0., 0.])
+        np.testing.assert_allclose(curves[0], expected, rtol=1e-12, atol=0)
+        np.testing.assert_allclose(curves[1], expected[::-1], rtol=1e-12, atol=0)
+        np.testing.assert_array_equal(stokes, original)
+
+    def test_plot_spectral_axis_selection(self):
+        wavelength = self.wavelength[::15]
+        nu = C_LIGHT / wavelength - self.line.nu0
+        stokes = np.zeros((2, 4, len(wavelength), 1, 1))
+        stokes[:, 0] = 1.
+        with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig") as save:
+            for axis in ("frequency", "wavelength"):
+                plot_spectra(wavelength, nu, stokes, [0.5], self.line, self.width,
+                             outdir, False, spectral_axis=axis)
+            paths = [str(call.args[0]) for call in save.call_args_list]
+            self.assertEqual(len(paths), 2)
+            self.assertTrue(paths[0].endswith("_frequency.png"))
+            self.assertTrue(paths[1].endswith("_wavelength.png"))
+            with self.assertRaisesRegex(ValueError, "spectral_axis"):
+                plot_spectra(wavelength, nu, stokes, [0.5], self.line, self.width,
+                             outdir, False, spectral_axis="doppler")
+
+    def test_spectral_tick_labels_do_not_overlap_on_model_grid(self):
+        wavelength = self.wavelength
+        nu = C_LIGHT / wavelength - self.line.nu0
+        stokes = np.ones((1, 4, len(wavelength), 1, 1))
+        captured = []
+
+        def capture(fig, *args, **kwargs):
+            fig.canvas.draw()
+            captured.append(fig)
+            self.assertEqual(tuple(fig.get_size_inches()), (19, 5.2))
+            for ax in fig.axes:
+                formatter = ax.xaxis.get_major_formatter()
+                self.assertAlmostEqual(formatter.offset,
+                                       650500 if ax.get_xlabel() == "Frequency [GHz]" else 460.8)
+                self.assertTrue(ax.xaxis.get_offset_text().get_text().startswith("+"))
+                labels = [label for label in ax.get_xticklabels() if label.get_visible()]
+                self.assertTrue(all(label.get_rotation() == 0 for label in labels))
+                boxes = [label.get_window_extent() for label in labels]
+                self.assertGreater(len(boxes), 4)
+                self.assertFalse(any(a.overlaps(b) for a, b in zip(boxes, boxes[1:])))
+
+        with tempfile.TemporaryDirectory() as outdir, patch("matplotlib.figure.Figure.savefig", capture):
+            plot_spectra(wavelength, nu, stokes, [0.5], self.line, self.width, outdir, False)
+        self.assertEqual(len(captured), 2)
 
     def test_wavelength_grid_rejects_bad_limits(self):
         with self.assertRaisesRegex(ValueError, "wavelength limits"):

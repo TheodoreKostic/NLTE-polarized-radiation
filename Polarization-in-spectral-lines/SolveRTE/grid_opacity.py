@@ -18,13 +18,19 @@ the photon destruction probability (a scalar, NOT the emission vector, which is 
 chi_c is the continuum opacity (unpolarized, purely thermal, constant across the line).
 Total line-plus-continuum source function: S(nu) = (eta_l S_l + chi_c B) / (eta_l + chi_c).
 When the optional upper population is supplied, use the population difference
-for opacity and spontaneous emission for the isotropic part, while retaining
-the above rank-2 radiation-tensor contribution. This hybrid prescription is
-restricted to zero magnetic field.
+for opacity and spontaneous emission for the isotropic part. The rank-2
+emission uses lower-population radiative pumping and the two-level Hanle
+relaxation below, without the thermal stimulated-emission factor. This is a
+fixed-population approximation, not a multilevel polarized equilibrium:
+stimulated emission is included as an isotropic population correction to
+propagation but its effects on upper-level alignment and polarized propagation
+are neglected. Other transitions and their alignment transfer are also omitted.
 
 with T^K'_Q evaluated in the magnetic frame, and Q/U (and rho_Q/rho_U) rotated
 back to the reference of the vertical frame, as in the "fixed_gamma_rotate_qu_back"
-mode. rho^2_Q (magnetic frame) = [D^dagger J^2]_Q / (1 + (C_ul + D2)/A + i Q Hu).
+mode. The source-unit rank-2 quantity called rho^2_Q in the code is
+[D^dagger J^2]_Q / (1 + (C_ul + D2)/A + i Q Hu); it is not the physical
+density matrix until combined with the appropriate population normalization.
 
 Units: eta in cm^-1, emission j_i (array name emis) in erg s^-1 cm^-3 Hz^-1 sr^-1 when J^K_Q is in
 erg s^-1 cm^-2 Hz^-1 sr^-1 (J^K_Q is the profile-weighted line average).
@@ -196,12 +202,13 @@ def eta0(line, n_l):
 
 
 def rho2_magnetic(J2, line, B, theta_B, chi_B, D2, C_ul):
-    """Upper-level rho^2_Q in the magnetic frame (the form used by prepare_magnetic_branch_state).
+    """Source-unit rank-2 Hanle response in the magnetic frame.
 
     The radiation tensor J^2 (vertical frame) is rotated into the frame where B is the
     quantization axis, where the Hanle operator is diagonal:
         rho^2_Q = [D^dagger J^2]_Q / (1 + (D2 + C_ul)/A + i Q Hu),   Hu = 2 pi nu_L gJu B / A.
-    Collisions (elastic D2 and inelastic C_ul) damp every Q equally; the magnetic term
+    This is not the population-normalized physical density matrix. Collisions
+    (elastic D2 and inelastic C_ul) damp every Q equally; the magnetic term
     i Q Hu rotates and damps Q != 0 components (Hanle effect). B = 0 gives a pure damping.
     """
     Hu = 2 * np.pi * NU_LARMOR * B * line.g_u / line.A_ul
@@ -226,7 +233,9 @@ def point_emission_and_propagation(
     opacity and in the destruction probability eps (see destruction_probability).
     When n_u is supplied, use it for the stimulated-emission correction to the
     opacity (if stimulated=True) and for the isotropic spontaneous emission.
-    The rank-2 contribution remains the existing two-level approximation.
+    Rank-2 emission uses two-level pumping proportional to n_l B_lu J^2_Q,
+    neglecting stimulated-emission effects on alignment and polarized opacity.
+    Other transitions' alignment pumping and relaxation are not included.
     wavelength_profile uses a linear wavelength Doppler coordinate rather than
     the default frequency coordinate. Positive projected velocity is outward.
     The line source is (1 - eps) J00 + eps B_nu; collisions also damp rho^2 through
@@ -253,8 +262,6 @@ def point_emission_and_propagation(
         amp = amp_radiation
         population_emission = None
     else:
-        if B != 0:
-            raise ValueError("population-based emissivity currently requires zero magnetic field")
         if not np.isfinite(n_u) or n_u < 0:
             raise ValueError("n_u must be finite and non-negative")
         gratio = (2 * line.J_u + 1) / (2 * line.J_l + 1)
@@ -310,7 +317,7 @@ def point_emission_and_propagation(
         if population_emission is None:
             scat = amp * (beta0 * j00 * absorb + scat2)
         else:
-            scat = population_emission * absorb + amp_radiation * scat2
+            scat = population_emission * absorb + eta0(line, n_l) / (c00 * dnu_D) * scat2
 
         comp = np.concatenate([eta_c.real, rho_sign * amp * disp[1:]])
         eta[:, :, im, :] = comp
@@ -378,7 +385,7 @@ def total_field_samples(B, theta_B, chi_B, B_unres, n_theta=8, n_chi=8):
 def point_emission_and_propagation_unresolved(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, B_unres, v_los, vmic, D2, C_ul,
     gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, chi_c=0.0, stimulated=True,
-    damping=None, v_x=0.0, v_y=0.0, wavelength_profile=False,
+    damping=None, v_x=0.0, v_y=0.0, wavelength_profile=False, n_u=None,
 ):
     """emis and eta at one depth point for a mean field plus an unresolved isotropic component.
 
@@ -404,6 +411,7 @@ def point_emission_and_propagation_unresolved(
             JKQ, line, mu, phi, nu, T, n_l, b, t, c, v_los, vmic, D2, C_ul,
             gamma=gamma, rho_sign=rho_sign, chi_c=chi_c, stimulated=stimulated,
             damping=damping, v_x=v_x, v_y=v_y, wavelength_profile=wavelength_profile,
+            n_u=n_u,
         )
         emis = emis + w * e
         eta = eta + w * h
@@ -417,8 +425,6 @@ def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, includ
     state = grid.line_state
     strength, inclination, azimuth = a.magnetic_angles()
     damping = state.damping
-    if state.n_u is not None and (np.any(a.B != 0) or np.any(a.B_unres != 0)):
-        raise ValueError("population-based emissivity currently requires zero magnetic field")
     for k in range(a.N):
         chi_c = a.chi_c[k] if include_continuum else 0.0
         if a.B_unres[k] > 0:
@@ -429,6 +435,7 @@ def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, includ
                 gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
                 chi_c=chi_c, stimulated=stimulated, damping=damping[k],
                 v_x=a.v_x[k], v_y=a.v_y[k], wavelength_profile=wavelength_profile,
+                n_u=None if state.n_u is None else state.n_u[k],
             )
             continue
         yield point_emission_and_propagation(

@@ -225,9 +225,10 @@ class LineState:
     n_l [cm^-3], C_ul [s^-1], and D2 [s^-1] must be supplied. Optional a
     is the dimensionless Voigt damping at each depth. If absent, only natural
     broadening A_ul/(4*pi*delta_nu_D) is included. Optional n_u [cm^-3]
-    selects population-based line opacity and isotropic emission; the existing
-    radiation-tensor prescription is retained for the aligned contribution.
-    This combination currently supports only zero magnetic field.
+    selects population-based line opacity and isotropic emission; aligned
+    emission uses a two-level pumping approximation with fixed radiation tensors.
+    Stimulated-emission effects on alignment and polarized propagation and
+    alignment transfer from other transitions are neglected.
     Derived properties are
     recomputed on access so changes to the atmosphere cannot leave stale values.
     """

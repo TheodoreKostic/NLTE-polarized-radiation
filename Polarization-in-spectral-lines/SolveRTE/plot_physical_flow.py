@@ -5,18 +5,36 @@ Use --help for wavelength-grid, velocity, and output options.
 
 The grid is linear in vacuum wavelength; --lambda-range-nm MIN MAX sets its
 endpoints. Otherwise it spans +/- --extent minimum local Doppler widths about
-line center. The output contains wavelength, frequency-offset, and reduced-
-wavelength plots. Wavelength plots show I_lambda per nm; frequency plots
-show I_nu per Hz. Q/I and U/I are percentages in all plots.
-Plot titles show the minimum local Doppler width in wavelength and frequency.
+line center. --spectral-axis selects absolute frequency, wavelength, or both
+(default) for spectral plots. Wavelength plots show I_lambda per nm; frequency
+plots show I_nu per Hz. Q/I and U/I are percentages in all plots.
+Plotted V/I values with magnitude below 1e-15 percent are shown as zero;
+the calculated Stokes vector is unchanged.
+Plot filenames and titles also show the resolved field strength, inclination
+from the outward vertical, and azimuth from +x towards +y, in degrees. The
+azimuth is undefined for a vertical field; both angles are undefined at B=0.
 
-This is a fixed-source calculation using Jbar00 and Jbar20 from the model,
-not a self-consistent NLTE calculation. The default scalar solver treats Stokes
+This is a fixed-source calculation using Jbar00, Jbar20 and optional Jbar21
+and Jbar22 components from the model, not a self-consistent NLTE calculation.
+The optional columns Jbar21_re, Jbar21_im, Jbar22_re, Jbar22_im are in the
+same units and vertical frame as Jbar00 and Jbar20; omitted columns are zero.
+The default scalar solver treats Stokes
 components independently; --solver delo uses the polarized DELO-linear solver
 and propagates all four Stokes components with the full propagation matrix.
-This script currently assumes zero magnetic field; the file supplies populations
-and its population-based emissivity currently supports B = 0. The bulk velocity
-is a constant vertical velocity using a nonrelativistic Doppler shift. By
+The file supplies populations. A fixed-population two-level approximation uses
+the prescribed rank-2 moments to pump upper-level alignment, with Hanle relaxation by A_ul, C_ul and
+the supplied D2. Jbar00 does not directly set emission in this population-based
+branch: n_upper sets isotropic emission. It neglects stimulated-emission effects on alignment and
+polarized propagation, and alignment pumping or relaxation by other transitions.
+The supplied example moments are from an unmagnetized model; prescribed moments
+remain fixed with B.
+The rank-2 population emissivity no longer uses a thermal stimulated factor,
+including at B = 0. Zeeman changes to the profile-weighted pumping are neglected.
+--b-field BX BY BZ sets a constant Cartesian field in gauss, with z outward;
+--b-unres sets the strength of an isotropic, microstructured component added to
+that field. --d2 sets the elastic depolarization rate in s^-1 (default zero);
+Q_elast is a broadening rate and is not used as D2. Nonzero fields require DELO.
+The bulk velocity is a constant vertical velocity using a nonrelativistic Doppler shift. By
 default the total line-center optical depth is taken from log_tau_line. A gray,
 thermal continuum is inferred by subtracting the population-based line opacity
 from the reconstructed line-center opacity. This assumes all residual opacity
@@ -36,7 +54,8 @@ from formal_solver import solve_delo, solve_short_characteristics
 from grid_opacity import fill_grid, planck
 from plot_model_file import (
     DEFAULT_MODEL, M3_TO_CM3, W_TO_CGS, build_grid, continuum_from_tau500, cumulative_tau,
-    header_value, plt, read_model, resolve_model, stokes_percent,
+    format_spectral_axis, header_value, plt, radiation_tensors_from_model, read_model,
+    resolve_model, stokes_percent,
 )
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots_physical_flow")
@@ -96,7 +115,8 @@ def continuum_from_line_center(col, line, v_turb):
 
 
 def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, gamma=0.0,
-                  solver="sc"):
+                  solver="sc", B=None, B_unres: float | np.ndarray = 0.0,
+                  D2: float | np.ndarray = 0.0, n_theta=8, n_chi=8):
     """Return frequency offsets, reduced x, source, optical depth, and Stokes.
 
     Wavelength [NL] is in cm; mu [Nmu] contains outward ray cosines.
@@ -104,6 +124,10 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
     Stokes is [ND, 3, NL, Nmu, 1] for solver="sc" and
     [ND, 4, NL, Nmu, 1] for solver="delo". Radiation quantities are per Hz in CGS.
     v_z is in cm/s; positive is upward. The last dimension is azimuth.
+    B is a Cartesian field in gauss, either [3] or [ND, 3]. B_unres [G] and
+    D2 [s^-1] are scalars or [ND]; the unresolved direction quadrature is
+    n_theta by n_chi. Nonzero fields require solver="delo".
+    With polarized propagation, source is j[:3]/eta_I, not K^-1 j.
     The tabulated half-cell is included in tau, but the boundary of the formal
     solution is at the top grid point; no transfer through that half-cell is solved.
     """
@@ -123,12 +147,21 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
     n = len(col["height_km"])
     if "n_upper" not in col:
         raise ValueError("model must contain n_upper")
+    B = np.zeros((n, 3)) if B is None else np.asarray(B, dtype=float)
+    if B.shape == (3,):
+        B = np.broadcast_to(B, (n, 3))
+    B_unres = np.broadcast_to(np.asarray(B_unres, dtype=float), (n,))
+    D2 = np.broadcast_to(np.asarray(D2, dtype=float), (n,))
+    if not isinstance(n_theta, int) or not isinstance(n_chi, int) or n_theta < 1 or n_chi < 1:
+        raise ValueError("n_theta and n_chi must be positive integers")
+    if solver != "delo" and (np.any(B != 0) or np.any(B_unres != 0)):
+        raise ValueError("nonzero magnetic fields require solver='delo'")
     chi_c = continuum_from_line_center(col, line, v_turb) if continuum else np.zeros(n)
     atm = Atmosphere1D(z=col["height_km"] * 1e5, T=col["T_K"],
-                       v_z=np.full(n, v_z), B=np.zeros((n, 3)),
+                       v_z=np.full(n, v_z), B=B, B_unres=B_unres,
                        v_turb=v_turb, chi_c=chi_c)
     state = LineState(atm, line, col["n_lower"] * M3_TO_CM3, col["C_ul"],
-                      np.zeros(n), a=col["a_damp"], n_u=col["n_upper"] * M3_TO_CM3)
+                      D2, a=col["a_damp"], n_u=col["n_upper"] * M3_TO_CM3)
 
     # Wavelength increases, so the corresponding frequency-offset grid decreases.
     # Frequency weights are positive trapezoidal widths; prescribed JKQ means
@@ -140,10 +173,7 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
     w_nu[1:-1] = (dnu[:-1] + dnu[1:]) / 2
     grid = Grid(atm, line, state, mu, np.full(len(mu), 2 / len(mu)),
                 np.zeros(1), np.array([2 * np.pi]), nu, w_nu).allocate()
-    jkq = np.zeros((n, 3, 5), complex)  # [ND, K, Q+2]
-    jkq[:, 0, 2] = col["Jbar00"] * W_TO_CGS
-    jkq[:, 2, 2] = col["Jbar20"] * W_TO_CGS
-    grid.set_JKQ(jkq)
+    grid.set_JKQ(radiation_tensors_from_model(col))
 
     # Positive projected velocity is toward the observer; recession is -v_proj.
     v_proj = atm.projected_velocity(mu, grid.phi)  # [ND, Nmu, 1]
@@ -151,7 +181,7 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
     x = (wavelength[None, :, None, None]
          - line.lambda0 * (1 - v_proj[:, None] / C_LIGHT))
     x = x / delta_lambda[:, None, None, None]  # [ND, NL, Nmu, 1]
-    fill_grid(grid, gamma=gamma, wavelength_profile=True)
+    fill_grid(grid, gamma=gamma, n_theta=n_theta, n_chi=n_chi, wavelength_profile=True)
 
     # eta_I is [ND, NL, Nmu, 1], j and S are [ND, 3, NL, Nmu, 1].
     eta_i = grid.eta[:, 0]
@@ -185,20 +215,38 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
 
 
 def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, continuum,
-                 solver="sc"):
-    """Plot top-boundary I and Q/I, U/I against three spectral coordinates."""
+                 solver="sc", field_label="", B=None, spectral_axis="both"):
+    """Plot top-boundary I and Q/I, U/I, V/I against physical spectral coordinates."""
+    if spectral_axis not in ("frequency", "wavelength", "both"):
+        raise ValueError("spectral_axis must be 'frequency', 'wavelength', or 'both'")
     os.makedirs(outdir, exist_ok=True)
     wavelength_nm = wavelength * 1e7
-    delta_nu_ref = line.nu0 * delta_lambda_ref / line.lambda0
     prefix = f"{solver}_{'continuum' if continuum else 'line'}"
+    field_suffix = ""
+    orientation_label = ""
+    if B is not None:
+        B = np.asarray(B, dtype=float)
+        if B.shape != (3,) or not np.all(np.isfinite(B)):
+            raise ValueError("B must be a finite Cartesian vector with shape (3,)")
+        horizontal = np.hypot(B[0], B[1])
+        strength = np.hypot(horizontal, B[2])
+        inclination = np.degrees(np.arctan2(horizontal, B[2])) if strength else None
+        azimuth = np.degrees(np.arctan2(B[1], B[0])) if horizontal else None
+        inc = f"{inclination:.6f}" if inclination is not None else "NA"
+        azi = f"{azimuth:.6f}" if azimuth is not None else "NA"
+        field_suffix = f"_B{strength:.6f}G_inc{inc}deg_azi{azi}deg"
+        orientation_label = (f"|B|={strength:.3f} G, inclination={inc} deg, "
+                             f"azimuth={azi} deg")
+        if inclination is None or azimuth is None:
+            orientation_label += " (NA: undefined)"
     axes = (
         ("wavelength", wavelength_nm, "Wavelength [nm]", True),
-        ("frequency", nu / 1e9, "Frequency offset from line center [GHz]", False),
-        ("reduced_wavelength", (wavelength - line.lambda0) / delta_lambda_ref,
-         "Wavelength offset [reference Doppler widths]", True),
+        ("frequency", (line.nu0 + nu) / 1e9, "Frequency [GHz]", False),
     )
     for name, coordinate, xlabel, per_wavelength in axes:
-        fig, panels = plt.subplots(1, 4, figsize=(19, 4.2), constrained_layout=True)
+        if spectral_axis != "both" and name != spectral_axis:
+            continue
+        fig, panels = plt.subplots(1, 4, figsize=(19, 5.2), constrained_layout=True)
         order = np.argsort(coordinate)
         for k, ray in enumerate(mu):
             # Convert CGS I_nu to SI; for I_lambda also multiply by |dnu/dlambda|
@@ -209,9 +257,11 @@ def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, con
             if emergent.shape[0] == 3:
                 emergent = np.vstack((emergent, np.zeros((1, emergent.shape[1]))))
             values = stokes_percent(emergent)
+            values[3, np.abs(values[3]) < 1e-15] = 0.0
             for i, ax in enumerate(panels):
                 ax.plot(coordinate[order], values[i, order], label=f"mu={ray:g}")
                 ax.set_xlabel(xlabel)
+                format_spectral_axis(ax)
                 ax.grid(alpha=0.3)
         panels[0].set_ylabel(
             r"$I_\lambda$ [W m$^{-2}$ nm$^{-1}$ sr$^{-1}$]" if per_wavelength
@@ -223,11 +273,10 @@ def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, con
         fig.suptitle(
             "Emergent spectra (" + solver + "): "
             + ("line + continuum" if continuum else "line only")
-            + "\n"
-            + rf"$\Delta\lambda_{{D,\mathrm{{ref}}}} = {delta_lambda_ref * 1e7:.5g}$ nm, "
-            + rf"$\Delta\nu_{{D,\mathrm{{ref}}}} = {delta_nu_ref / 1e9:.5g}$ GHz"
+            + (f"\n{field_label}" if field_label else "")
+            + (f"\n{orientation_label}" if orientation_label else "")
         )
-        path = os.path.join(outdir, f"{prefix}_{name}.png")
+        path = os.path.join(outdir, f"{prefix}_{name}{field_suffix}.png")
         fig.savefig(path, dpi=150)
         plt.close(fig)
         print(f"Saved {path}")
@@ -242,11 +291,21 @@ def main():
                         help="grid half-width in minimum local Doppler widths")
     parser.add_argument("--lambda-range-nm", type=float, nargs=2, metavar=("MIN", "MAX"),
                         help="explicit wavelength range in nm, instead of --extent")
-    parser.add_argument("--mu", type=float, nargs="+", default=[0.1, 0.33, 0.5, 0.75, 1.0])
+    parser.add_argument("--mu", type=float, nargs="+", default=[0.01, 0.05, 0.1, 0.33, 0.5, 0.75, 1.0])
     parser.add_argument("--v-z", type=float, default=0.0,
                         help="constant vertical bulk velocity in km/s, positive upward")
     parser.add_argument("--solver", choices=("sc", "delo"), default="sc",
                         help="sc: uncoupled scalar formal solution; delo: polarized DELO-linear")
+    parser.add_argument("--spectral-axis", choices=("frequency", "wavelength", "both"), default="both",
+                        help="spectral plot x-axis: absolute frequency, wavelength, or both (default)")
+    parser.add_argument("--b-field", type=float, nargs=3, metavar=("BX", "BY", "BZ"),
+                        default=(0., 0., 0.), help="constant Cartesian magnetic field in gauss")
+    parser.add_argument("--b-unres", type=float, default=0.,
+                        help="strength in gauss of isotropic unresolved component")
+    parser.add_argument("--d2", type=float, default=0.,
+                        help="elastic depolarization rate in s^-1, not Q_elast")
+    parser.add_argument("--n-theta", type=int, default=8, help="unresolved-field polar quadrature")
+    parser.add_argument("--n-chi", type=int, default=8, help="unresolved-field azimuth quadrature")
     parser.add_argument("--mass", type=float, default=87.62, help="atomic mass in amu")
     parser.add_argument("--gamma-deg", type=float, default=90.0)
     opacity_group = parser.add_mutually_exclusive_group()
@@ -264,10 +323,12 @@ def main():
     mu = np.array(args.mu)
     nu, x, source, tau, stokes = physical_flow(
         col, line, v_turb, wavelength, mu, args.v_z * 1e5, args.continuum,
-        np.deg2rad(args.gamma_deg), args.solver)
+        np.deg2rad(args.gamma_deg), args.solver, B=args.b_field, B_unres=args.b_unres,
+        D2=args.d2, n_theta=args.n_theta, n_chi=args.n_chi)
     print(f"x {x.shape}; source {source.shape}; tau {tau.shape}; Stokes {stokes.shape}")
     print(f"Fixed prescribed Jbar tensors; {args.solver} transfer; "
-          "unmagnetized model (B=0).")
+          f"B={tuple(args.b_field)} G, B_unres={args.b_unres:g} G, D2={args.d2:g} s^-1.")
+    print("Fixed populations; two-level alignment neglects stimulated and multilevel alignment effects.")
     if args.continuum:
         print("Gray thermal continuum inferred from the static total line-center optical depth.")
         print("The half-cell optical depth is recorded but not traversed by the formal solution.")
@@ -276,8 +337,10 @@ def main():
               f"median {np.median(ratio):.3g}, max {ratio.max():.3g}")
     if args.v_z != 0:
         print("Bulk velocity does not update the prescribed radiation tensors.")
+    field_label = (f"B={tuple(args.b_field)} G, B_unres={args.b_unres:g} G, "
+                   f"D2={args.d2:g} s^-1")
     plot_spectra(wavelength, nu, stokes, mu, line, width, args.outdir, args.continuum,
-                 args.solver)
+                 args.solver, field_label=field_label, B=args.b_field, spectral_axis=args.spectral_axis)
 
 
 if __name__ == "__main__":
