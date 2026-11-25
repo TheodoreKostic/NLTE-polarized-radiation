@@ -224,7 +224,11 @@ class LineState:
 
     n_l [cm^-3], C_ul [s^-1], and D2 [s^-1] must be supplied. Optional a
     is the dimensionless Voigt damping at each depth. If absent, only natural
-    broadening A_ul/(4*pi*delta_nu_D) is included. Derived properties are
+    broadening A_ul/(4*pi*delta_nu_D) is included. Optional n_u [cm^-3]
+    selects population-based line opacity and isotropic emission; the existing
+    radiation-tensor prescription is retained for the aligned contribution.
+    This combination currently supports only zero magnetic field.
+    Derived properties are
     recomputed on access so changes to the atmosphere cannot leave stale values.
     """
     atm: Atmosphere1D
@@ -233,11 +237,12 @@ class LineState:
     C_ul: np.ndarray
     D2: np.ndarray
     a: np.ndarray | None = None
+    n_u: np.ndarray | None = None
 
     def __post_init__(self):
-        for name in ("n_l", "C_ul", "D2", "a"):
+        for name in ("n_l", "C_ul", "D2", "a", "n_u"):
             value = getattr(self, name)
-            if value is None and name == "a":
+            if value is None and name in ("a", "n_u"):
                 continue
             value = np.asarray(value, dtype=float)
             if value.shape != (self.atm.N,) or not np.all(np.isfinite(value)) or np.any(value < 0):
@@ -381,6 +386,8 @@ class Grid:
         from grid_opacity import planck
         from grid_tensors import absorption_profile, jkq_from_stokes, tensor_basis
 
+        if self.line_state.n_u is not None:
+            raise ValueError("solve_rte_sc does not update a prescribed upper-level population")
         if not np.isfinite(tol) or tol <= 0:
             raise ValueError("tol must be finite and positive")
         if int(max_iter) != max_iter or max_iter < 1:

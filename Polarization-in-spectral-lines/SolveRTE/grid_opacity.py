@@ -17,6 +17,10 @@ the photon destruction probability (a scalar, NOT the emission vector, which is 
     eps = C_ul f / (A_ul + C_ul f)            (see destruction_probability).
 chi_c is the continuum opacity (unpolarized, purely thermal, constant across the line).
 Total line-plus-continuum source function: S(nu) = (eta_l S_l + chi_c B) / (eta_l + chi_c).
+When the optional upper population is supplied, use the population difference
+for opacity and spontaneous emission for the isotropic part, while retaining
+the above rank-2 radiation-tensor contribution. This hybrid prescription is
+restricted to zero magnetic field.
 
 with T^K'_Q evaluated in the magnetic frame, and Q/U (and rho_Q/rho_U) rotated
 back to the reference of the vertical frame, as in the "fixed_gamma_rotate_qu_back"
@@ -208,6 +212,7 @@ def rho2_magnetic(J2, line, B, theta_B, chi_B, D2, C_ul):
 def point_emission_and_propagation(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, v_los, vmic, D2, C_ul,
     gamma=0.0, rho_sign=1.0, chi_c=0.0, stimulated=True, damping=None, v_x=0.0, v_y=0.0,
+    n_u=None, wavelength_profile=False,
 ):
     """Local emissivity and propagation matrix at one depth point for ONE magnetic field.
 
@@ -219,6 +224,11 @@ def point_emission_and_propagation(
     D2, C_ul are collisional rates; gamma is the Stokes reference angle; chi_c continuum
     opacity [cm^-1]; stimulated selects the stimulated-emission factor f in the line
     opacity and in the destruction probability eps (see destruction_probability).
+    When n_u is supplied, use it for the stimulated-emission correction to the
+    opacity (if stimulated=True) and for the isotropic spontaneous emission.
+    The rank-2 contribution remains the existing two-level approximation.
+    wavelength_profile uses a linear wavelength Doppler coordinate rather than
+    the default frequency coordinate. Positive projected velocity is outward.
     The line source is (1 - eps) J00 + eps B_nu; collisions also damp rho^2 through
     (D2 + C_ul)/A. The continuum adds chi_c to eta_I and chi_c B_nu to j_I only.
     Steps: Doppler width and damping -> Zeeman profile tables Phi -> radiation-tensor
@@ -238,7 +248,22 @@ def point_emission_and_propagation(
     vH = line.g_u * NU_LARMOR * B / dnu_D
     c00 = phi00_norm()
     f_stim = stimulated_factor(line.nu0, T) if stimulated else 1.0
-    amp = f_stim * eta0(line, n_l) / (c00 * dnu_D)
+    amp_radiation = f_stim * eta0(line, n_l) / (c00 * dnu_D)
+    if n_u is None:
+        amp = amp_radiation
+        population_emission = None
+    else:
+        if B != 0:
+            raise ValueError("population-based emissivity currently requires zero magnetic field")
+        if not np.isfinite(n_u) or n_u < 0:
+            raise ValueError("n_u must be finite and non-negative")
+        gratio = (2 * line.J_u + 1) / (2 * line.J_l + 1)
+        effective_lower = n_l - n_u / gratio if stimulated else n_l
+        if effective_lower <= 0:
+            raise ValueError("population-based line opacity must be positive")
+        amp = eta0(line, effective_lower) / (c00 * dnu_D)
+        population_emission = (eta0(line, n_u / gratio) / (c00 * dnu_D)
+                               * (2 * H_PLANCK * line.nu0**3 / C_LIGHT**2))
 
     theta_m, chi_m, back = magnetic_frame_geometry(mu, phi, theta_B, chi_B, gamma)
     basis = tensor_basis_angles(theta_m, chi_m, gamma)  # [4, 3, 5, nmu, nphi]
@@ -255,13 +280,23 @@ def point_emission_and_propagation(
     for im, m in enumerate(mu):
         # nu is the offset nu - nu0; project the velocity onto each ray.
         if v_x == 0.0 and v_y == 0.0:
-            x = (-nu + line.nu0 * v_los * m / C_LIGHT) / dnu_D
+            if wavelength_profile:
+                wavelength = C_LIGHT / (line.nu0 + nu)
+                x = (wavelength - line.lambda0 * (1 - v_los * m / C_LIGHT))
+                x /= line.lambda0 * dnu_D / line.nu0
+            else:
+                x = (-nu + line.nu0 * v_los * m / C_LIGHT) / dnu_D
             tab = phi_table(x, vH, a)[..., None]
             tab_d = phi_table_disp(x, vH, a)[..., None]
         else:
             projected = (v_los * m + np.sqrt(max(0.0, 1.0 - m * m))
                          * (v_x * np.cos(phi) + v_y * np.sin(phi)))
-            x = (-nu[:, None] + line.nu0 * projected[None, :] / C_LIGHT) / dnu_D
+            if wavelength_profile:
+                wavelength = C_LIGHT / (line.nu0 + nu[:, None])
+                x = (wavelength - line.lambda0 * (1 - projected[None, :] / C_LIGHT))
+                x /= line.lambda0 * dnu_D / line.nu0
+            else:
+                x = (-nu[:, None] + line.nu0 * projected[None, :] / C_LIGHT) / dnu_D
             tab = phi_table(x.ravel(), vH, a).reshape(3, 3, 5, nnu, nphi)
             tab_d = phi_table_disp(x.ravel(), vH, a).reshape(3, 3, 5, nnu, nphi)
         # absorption-like K=0 block: sum_K' Phi^0_{0K'}(x) T^K'_0(i); [4, nx, nphi]
@@ -272,7 +307,10 @@ def point_emission_and_propagation(
         )
         disp = np.einsum("kxp,ikp->ixp", tab_d[0, :, 2], basis[:, :, 2, im].real)
         eta_c = amp * absorb
-        scat = amp * (beta0 * j00 * absorb + scat2)
+        if population_emission is None:
+            scat = amp * (beta0 * j00 * absorb + scat2)
+        else:
+            scat = population_emission * absorb + amp_radiation * scat2
 
         comp = np.concatenate([eta_c.real, rho_sign * amp * disp[1:]])
         eta[:, :, im, :] = comp
@@ -286,11 +324,14 @@ def point_emission_and_propagation(
         emis[0, :, im, :], emis[1, :, im, :] = s[0], eq
         emis[2, :, im, :], emis[3, :, im, :] = eu, s[3]
 
-    if eps > 0.0:
+    if eps > 0.0 and population_emission is None:
         emis += eps * planck(line.nu0, T) * eta[[0, 1, 2, 3]]
     if chi_c > 0.0:
         eta[0] += chi_c
-        emis[0] += chi_c * planck(line.nu0, T)
+        # Continuum emission follows B at each frequency; the line source keeps nu0
+        # because the Einstein relations fix it there.
+        thermal = planck(line.nu0 + nu, T) if wavelength_profile else planck(line.nu0, T)
+        emis[0] += chi_c * np.reshape(thermal, (-1, 1, 1))
     return emis, eta
 
 
@@ -337,7 +378,7 @@ def total_field_samples(B, theta_B, chi_B, B_unres, n_theta=8, n_chi=8):
 def point_emission_and_propagation_unresolved(
     JKQ, line, mu, phi, nu, T, n_l, B, theta_B, chi_B, B_unres, v_los, vmic, D2, C_ul,
     gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, chi_c=0.0, stimulated=True,
-    damping=None, v_x=0.0, v_y=0.0,
+    damping=None, v_x=0.0, v_y=0.0, wavelength_profile=False,
 ):
     """emis and eta at one depth point for a mean field plus an unresolved isotropic component.
 
@@ -362,19 +403,22 @@ def point_emission_and_propagation_unresolved(
         e, h = point_emission_and_propagation(
             JKQ, line, mu, phi, nu, T, n_l, b, t, c, v_los, vmic, D2, C_ul,
             gamma=gamma, rho_sign=rho_sign, chi_c=chi_c, stimulated=stimulated,
-            damping=damping, v_x=v_x, v_y=v_y,
+            damping=damping, v_x=v_x, v_y=v_y, wavelength_profile=wavelength_profile,
         )
         emis = emis + w * e
         eta = eta + w * h
     return emis, eta
 
 
-def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, include_continuum):
+def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, include_continuum,
+                       wavelength_profile=False):
     """Yield emission and propagation coefficients at each depth."""
     a = grid.atm
     state = grid.line_state
     strength, inclination, azimuth = a.magnetic_angles()
     damping = state.damping
+    if state.n_u is not None and (np.any(a.B != 0) or np.any(a.B_unres != 0)):
+        raise ValueError("population-based emissivity currently requires zero magnetic field")
     for k in range(a.N):
         chi_c = a.chi_c[k] if include_continuum else 0.0
         if a.B_unres[k] > 0:
@@ -384,7 +428,7 @@ def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, includ
                 a.v_z[k], a.v_turb[k], state.D2[k], state.C_ul[k],
                 gamma=gamma, rho_sign=rho_sign, n_theta=n_theta, n_chi=n_chi,
                 chi_c=chi_c, stimulated=stimulated, damping=damping[k],
-                v_x=a.v_x[k], v_y=a.v_y[k],
+                v_x=a.v_x[k], v_y=a.v_y[k], wavelength_profile=wavelength_profile,
             )
             continue
         yield point_emission_and_propagation(
@@ -392,7 +436,8 @@ def _grid_coefficients(grid, gamma, rho_sign, n_theta, n_chi, stimulated, includ
             a.T[k], state.n_l[k], strength[k], inclination[k], azimuth[k], a.v_z[k], a.v_turb[k],
             state.D2[k], state.C_ul[k], gamma=gamma, rho_sign=rho_sign,
             chi_c=chi_c, stimulated=stimulated, damping=damping[k],
-            v_x=a.v_x[k], v_y=a.v_y[k],
+            v_x=a.v_x[k], v_y=a.v_y[k], n_u=None if state.n_u is None else state.n_u[k],
+            wavelength_profile=wavelength_profile,
         )
 
 
@@ -405,18 +450,21 @@ def line_emissivity(grid, gamma=0.0, n_theta=8, n_chi=8, stimulated=True):
     ])
 
 
-def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True):
+def fill_grid(grid, gamma=0.0, rho_sign=1.0, n_theta=8, n_chi=8, stimulated=True,
+              wavelength_profile=False):
     """Fill grid.emis and grid.eta from grid.JKQ, atmosphere, and line properties.
 
-    The line state supplies depth-dependent n_l, D2 and C_ul (hence a depth-dependent photon
+    The line state supplies depth-dependent n_l, optional n_u, D2 and C_ul (hence a depth-dependent photon
     destruction probability); the atmosphere supplies the thermodynamic, velocity,
     magnetic and continuum-opacity (chi_c) fields. Depths with atm.B_unres > 0 use
     the mean-plus-unresolved-field average
     (point_emission_and_propagation_unresolved); all others use the single mean
     field directly. n_theta, n_chi set the direction quadrature of that average.
+    wavelength_profile selects a linear wavelength Doppler coordinate.
     """
     for k, (emis, eta) in enumerate(_grid_coefficients(
-        grid, gamma, rho_sign, n_theta, n_chi, stimulated, include_continuum=True
+        grid, gamma, rho_sign, n_theta, n_chi, stimulated, include_continuum=True,
+        wavelength_profile=wavelength_profile
     )):
         grid.emis[k], grid.eta[k] = emis, eta
     return grid

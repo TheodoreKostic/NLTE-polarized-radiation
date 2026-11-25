@@ -6,23 +6,28 @@ Without an argument it reads sr4607_falc_Jbar_anisotropy.txt next to this script
 Plots go to plots_model/ next to this script.
 
 The text file gives, from the top of the atmosphere downwards, height_km,
-log_tau500, T_K, tau_line, Jbar00, Jbar20 (W m^-2 Hz^-1 sr^-1), n_lower (m^-3),
+log_tau500, T_K, log_tau_line, Jbar00, Jbar20 (W m^-2 Hz^-1 sr^-1),
+n_lower and n_upper (m^-3),
 C_ul, epsilon and a_damp; the line wavelength, A_ul and Gamma_rad are read from
 its header. The model is unmagnetized and static. Elastic collisions (Q_elast)
 only broaden the line (through a_damp) and are not treated as depolarizing.
 
-Pipeline: J^K_Q from the file is set on a Grid (it is prescribed, not iterated
-to self-consistency), LineModel.calc_j gives the emissivity, and the source
-function is j / chi with the depth-dependent opacity chi(nu). I, Q, U for
-outgoing rays come from a formal solution with that fixed source.
-Optical depths use the trapezoid rule, as the file's tau_line does.
+Pipeline: the file's populations set the line opacity and isotropic emission;
+the existing radiation-tensor calculation supplies the aligned contribution.
+The prescribed moments are not iterated to self-consistency. Comparison plots
+also show the original two-level epsilon/J source with the same opacity and
+boundaries, isolating the effect of the source prescription.
+Optical depths use the trapezoid rule, referenced to zero at the top grid point.
+The file's log_tau_line is total line-centre optical depth including continuum,
+with a half-cell top contribution, and is used only as a diagnostic.
 
 Two cases are plotted (the second one has "continuum" in its file names):
   line only:         chi = eta_line;  S_I, S_Q and S_U do not depend on frequency.
   line + continuum:  chi = eta_line + chi_c, with an unpolarized thermal chi_c
                      inferred from the file: the optical depth is its tau500
                      (log_tau500 column) and chi_c = tau500 |d ln tau500 / dz|.
-                     This assumes a gray continuum equal to the one at 500 nm.
+                     This assumes a gray, purely thermal continuum equal to the
+                     total continuum opacity at 500 nm, including scattering.
 Radiation quantities are plotted in SI (default, as in the file) or cgs units.
 Stokes plots show I and 100 Q/I, 100 U/I; source-function plots remain absolute.
 Anisotropy plots use the prescribed file moments, w = sqrt(2) Jbar20/Jbar00.
@@ -44,7 +49,7 @@ from atmosphere import AMU, C_LIGHT, K_B, Atmosphere1D, Grid, LineModel, LineSta
 from grid_opacity import fill_grid, planck
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plots_model")
-REQUIRED = ("height_km", "log_tau500", "T_K", "tau_line", "Jbar00", "Jbar20", "n_lower",
+REQUIRED = ("height_km", "log_tau500", "T_K", "Jbar00", "Jbar20", "n_lower",
             "C_ul", "epsilon", "a_damp")
 W_TO_CGS = 1e3  # W m^-2 Hz^-1 sr^-1 -> erg s^-1 cm^-2 Hz^-1 sr^-1
 M3_TO_CM3 = 1e-6
@@ -104,7 +109,7 @@ def cumulative_tau(chi, dz):
 def continuum_from_tau500(col):
     """Continuum optical depth below the top node and opacity at the nodes, from the file's tau500.
 
-    The depth is tau500 - tau500[0] (zero at the top node, like the file's tau_line); the
+    The depth is tau500 - tau500[0] (zero at the top node); the
     material above the top node is not included. chi_c = -d tau500 / dz [cm^-1] is
     evaluated as tau500 |d ln tau500 / dz| with a non-uniform central difference.
     """
@@ -233,6 +238,46 @@ def plot_spectrum_frequency(nu, stokes, scale, unit, mu, outdir, label_prefix=""
         plt.close(fig)
 
 
+def plot_source_comparison(nu, stokes, reference, scale, unit, mu, outdir, prefix):
+    """Compare population and epsilon/J sources with the same opacity."""
+    for k, mu_val in enumerate(mu):
+        population = denoise(scale * stokes[0, :3, :, k, 0])
+        baseline = denoise(scale * reference[0, :3, :, k, 0])
+        for normalized in (False, True):
+            fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+            arrays = (stokes_percent(population), stokes_percent(baseline)) if normalized else (population, baseline)
+            labels = ("I", "Q/I", "U/I") if normalized else ("I", "Q", "U")
+            for i, (ax, label) in enumerate(zip(axes, labels)):
+                for values, name in zip(arrays, ("Population source", "Two-level ε/J source")):
+                    ax.plot(nu / 1e9, values[i], label=name)
+                ax.set_xlabel("Frequency offset from line center [GHz]")
+                ax.set_ylabel(f"{label} [{unit if not normalized or i == 0 else '%'}]")
+                ax.grid(alpha=0.3)
+            axes[0].legend()
+            fig.suptitle(f"{prefix}: source comparison, μ={mu_val:.2f}")
+            suffix = "percent" if normalized else "absolute"
+            fig.savefig(os.path.join(outdir, f"{prefix}_source_comparison_{suffix}_mu_{mu_val:.2f}.png"), dpi=150)
+            plt.close(fig)
+        p = stokes_percent(population)
+        b = stokes_percent(baseline)
+        delta_i = np.full_like(b[0], np.nan)
+        np.divide(100 * (p[0] - b[0]), b[0], out=delta_i, where=b[0] > 0)
+        fig, axes = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        for ax, values, label in zip(
+            axes, (delta_i, p[1] - b[1], p[2] - b[2]),
+            ("I difference / baseline [%]", "Q/I difference [percentage points]",
+             "U/I difference [percentage points]"),
+        ):
+            ax.plot(nu / 1e9, values)
+            ax.axhline(0, color="black", linewidth=0.5)
+            ax.set_xlabel("Frequency offset from line center [GHz]")
+            ax.set_ylabel(label)
+            ax.grid(alpha=0.3)
+        fig.suptitle(f"{prefix}: population minus ε/J source, μ={mu_val:.2f}")
+        fig.savefig(os.path.join(outdir, f"{prefix}_source_difference_mu_{mu_val:.2f}.png"), dpi=150)
+        plt.close(fig)
+
+
 def plot_spectrum_normalized(nu, stokes, scale, unit, mu, outdir, label_prefix=""):
     """Plot normalized Q/I and U/I spectra vs frequency for all viewing angles.
 
@@ -325,6 +370,12 @@ def plot_spectrum_wavelength(nu, stokes, scale, unit, mu, line, outdir, label_pr
         plt.close(fig)
 
 
+def doppler_width_label(dnu_ref, line):
+    """Reference frequency width and its small-offset wavelength equivalent."""
+    dlambda_nm = line.lambda0 * dnu_ref / line.nu0 * 1e7
+    return f"Reference Doppler width: {dlambda_nm:.5g} nm, {dnu_ref / 1e9:.5g} GHz"
+
+
 def plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, label_prefix=""):
     """Plot emergent I and fractional Q/I, U/I vs Doppler-width frequency offset.
 
@@ -364,7 +415,8 @@ def plot_spectrum_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outdir, la
             ax.set_title(f"{label} spectrum at μ={mu_val:.2f}")
             ax.grid(alpha=0.3)
 
-        fig.suptitle(f"Emergent spectra (Doppler) at μ={mu_val:.2f}")
+        fig.suptitle(f"Emergent spectra (Doppler) at μ={mu_val:.2f}\n"
+                     f"{doppler_width_label(dnu_ref, line)}")
         filename = f"spectrum_doppler_mu_{mu_val:.2f}.png"
         if label_prefix:
             filename = f"{label_prefix}_{filename}"
@@ -456,7 +508,8 @@ def plot_all_mu_spectra_doppler(nu, stokes, scale, unit, mu, dnu_ref, line, outd
         ax.legend(fontsize=8, loc='best')
         ax.grid(alpha=0.3)
 
-    fig.suptitle("Emergent spectra for different viewing angles (Doppler)")
+    fig.suptitle("Emergent spectra for different viewing angles (Doppler)\n"
+                 f"{doppler_width_label(dnu_ref, line)}")
     filename = "spectrum_all_mu_doppler.png"
     if label_prefix:
         filename = f"{label_prefix}_{filename}"
@@ -483,9 +536,9 @@ def parse_args():
     p.add_argument("--outdir", default=OUT)
     p.add_argument("--mu", type=float, nargs="+", default=[0.1, 0.33, 0.5, 0.75, 1.0])
     p.add_argument("--offsets", type=float, nargs="+", default=[0.0, 3.0, 6.0],
-                   help="frequency offsets of the Stokes plots, in Doppler widths of the coolest layer")
+                   help="frequency offsets of the Stokes plots, in minimum local Doppler widths")
     p.add_argument("--extent", type=float, default=12.0,
-                   help="half-width of the frequency grid, in Doppler widths of the coolest layer")
+                   help="half-width of the frequency grid, in minimum local Doppler widths")
     p.add_argument("--n-nu", type=int, default=241, help="number of frequency points (odd)")
     p.add_argument("--gamma-deg", type=float, default=90.0, help="Stokes reference angle (0: radial)")
     p.add_argument("--solver", choices=("sc", "fs"), default="sc",
@@ -504,13 +557,14 @@ def parse_args():
     return p.parse_args()
 
 
-def build_grid(col, line, v_turb, mu, nu, w_nu, chi_c, gamma):
+def build_grid(col, line, v_turb, mu, nu, w_nu, chi_c, gamma, use_populations=False):
     """Grid carrying the file's J^K_Q, with emissivity and opacity filled for continuum chi_c [cm^-1]."""
     n = len(col["height_km"])
     atm = Atmosphere1D(z=col["height_km"] * 1e5, T=col["T_K"], v_z=np.zeros(n),
                        B=np.zeros((n, 3)), v_turb=v_turb, chi_c=chi_c)
     state = LineState(atm, line, col["n_lower"] * M3_TO_CM3, col["C_ul"], np.zeros(n),
-                      a=col["a_damp"])
+                      a=col["a_damp"],
+                      n_u=col["n_upper"] * M3_TO_CM3 if use_populations else None)
     # J^K_Q is supplied, so the angular weights are not used
     grid = Grid(atm, line, state, mu, np.full(len(mu), 2.0 / len(mu)),
                 np.zeros(1), np.full(1, 2 * np.pi), nu, w_nu).allocate()
@@ -542,6 +596,8 @@ def main():
         raise ValueError("--mu values must be in (0, 1]")
 
     col, header = read_model(resolve_model(args.model))
+    if "n_upper" not in col or "log_tau_line" not in col:
+        raise ValueError("the population comparison requires n_upper and log_tau_line in the model file")
     lam0_nm = header_value(header, r"lambda0\s*=\s*([0-9.eE+-]+)\s*nm", args.wavelength_nm, "lambda0")
     a_ul = header_value(header, r"A_ul\s*=\s*([0-9.eE+-]+)", args.A_ul, "A_ul")
     gamma_rad = header_value(header, r"Gamma_rad\s*=\s*([0-9.eE+-]+)", args.gamma_rad, "Gamma_rad")
@@ -567,7 +623,8 @@ def main():
     centre = int(np.argmin(np.abs(nu)))
 
     # line only
-    grid = build_grid(col, line, v_turb, mu, nu, w_nu, np.zeros(n), gamma)
+    grid = build_grid(col, line, v_turb, mu, nu, w_nu, np.zeros(n), gamma,
+                      use_populations=True)
     atm, state, jkq = grid.atm, grid.line_state, grid.JKQ
     j = line.calc_j(grid, gamma=gamma)
     eta_i = grid.eta[:, 0]
@@ -576,22 +633,34 @@ def main():
     source = j / eta_i[:, None]
     tau = cumulative_tau(eta_i[:, :, 0, 0], -np.diff(atm.z))
     stokes = transfer(source, tau, mu, line, atm.T[-1], bottom_I, args.solver)
+    baseline_grid = build_grid(col, line, v_turb, mu, nu, w_nu, np.zeros(n), gamma)
+    baseline_source = baseline_grid.emis[:, :3] / baseline_grid.eta[:, 0, None]
+    stokes_baseline = transfer(baseline_source, tau, mu, line, atm.T[-1], bottom_I, args.solver)
 
     # line + continuum: the file's tau500 is the continuum optical depth
     tau_cont, chi_c = continuum_from_tau500(col)
-    grid_c = build_grid(col, line, v_turb, mu, nu, w_nu, chi_c, gamma)
+    grid_c = build_grid(col, line, v_turb, mu, nu, w_nu, chi_c, gamma,
+                        use_populations=True)
     eta_total = grid_c.eta[:, 0]
     source_c = grid_c.emis[:, :3] / eta_total[:, None]
     tau_c = tau + tau_cont[:, None]
     stokes_c = transfer(source_c, tau_c, mu, line, atm.T[-1], bottom_I, args.solver)
+    cc = chi_c[:, None, None, None]
+    thermal = planck(line.nu0, atm.T)[:, None, None, None]
+    baseline_source_c = baseline_source * eta_i[:, None] / eta_total[:, None]
+    baseline_source_c[:, 0] += cc * thermal / eta_total
+    stokes_c_baseline = transfer(baseline_source_c, tau_c, mu, line, atm.T[-1],
+                                 bottom_I, args.solver)
     # checks against the file and against the source-function relations
     print(f"line: lambda0 = {lam0_nm:.4f} nm, A_ul = {a_ul:.4e} s^-1, "
           f"v_turb = {v_turb.min() / 1e5:.2f}..{v_turb.max() / 1e5:.2f} km/s (from a_damp)")
     print(f"epsilon: max |eps_pipeline/eps_file - 1| = "
           f"{np.max(np.abs(state.eps / col['epsilon'] - 1)):.2e}")
-    positive = col["tau_line"] > 0
-    ratio = tau_c[positive, centre] / col["tau_line"][positive]
-    print(f"tau_line: (line + continuum tau at line centre) / file value: range "
+    tau_file = 10.0 ** col["log_tau_line"]
+    tau_file = tau_file - tau_file[0]
+    positive = tau_file > 0
+    ratio = tau_c[positive, centre] / tau_file[positive]
+    print(f"log_tau_line: reconstructed total tau / file tau (both relative to top): range "
           f"{ratio.min():.3f} .. {ratio.max():.3f}, median {np.median(ratio):.3f}")
     print(f"continuum: tau {tau_cont[1]:.2e} .. {tau_cont[-1]:.2e}, "
           f"chi_c {chi_c.min():.2e} .. {chi_c.max():.2e} cm^-1")
@@ -601,16 +670,14 @@ def main():
     if len(mu) >= 2:
         # S_I(mu) = a + b (3 mu^2 - 1) with a = (1 - eps) J00 + eps B
         design = np.c_[np.ones(len(mu)), 3 * mu**2 - 1]
-        s_mu = source[:, 0, centre, :, 0].T
+        s_mu = baseline_source[:, 0, centre, :, 0].T
         coef = np.linalg.lstsq(design, s_mu, rcond=None)[0]
         s_i = (1 - state.eps) * jkq[:, 0, 2].real + state.eps * planck(line.nu0, atm.T)
-        print(f"S_I (line only): mu dependence follows a + b(3mu^2-1) to "
+        print(f"epsilon/J S_I (line only): mu dependence follows a + b(3mu^2-1) to "
               f"{np.max(np.abs(design @ coef - s_mu) / s_mu):.1e}; "
               f"a = (1-eps)J00 + eps B to {np.max(np.abs(coef[0] / s_i - 1)):.1e}")
     print(f"S_I (line only) frequency spread: "
           f"{np.max(np.abs(source[:, 0] / source[:, 0, centre:centre + 1] - 1)):.2e}")
-    cc = chi_c[:, None, None, None]
-    thermal = planck(line.nu0, atm.T)[:, None, None, None]
     expected_i = (j[:, 0] + cc * thermal) / (eta_i + cc)
     expected_q = j[:, 1] / (eta_i + cc)
     print(f"S (line + continuum) = (j + chi_c B)/(eta + chi_c) for I and j_Q/(eta + chi_c) for Q: "
@@ -621,6 +688,9 @@ def main():
           f"line + continuum {scale * stokes_c[:, 0].min():.3e} (should be >= 0)")
 
     os.makedirs(args.outdir, exist_ok=True)
+    plot_source_comparison(nu, stokes, stokes_baseline, scale, unit, mu, args.outdir, "line")
+    plot_source_comparison(nu, stokes_c, stokes_c_baseline, scale, unit, mu, args.outdir,
+                           "continuum")
     height = col["height_km"]
     s_names = [rf"${s}$ [{unit}]" for s in ("S_I", "S_Q", "S_U")]
     stokes_names = [rf"$I$ [{unit}]", r"$Q/I$ [%]", r"$U/I$ [%]"]

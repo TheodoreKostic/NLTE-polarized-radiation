@@ -1,6 +1,6 @@
 """Compute and plot emergent spectra starting from a wavelength grid.
 
-Run: python plot_physical_flow.py [model.txt] [--continuum]
+Run: python plot_physical_flow.py [model.txt] [--line-only]
 Use --help for wavelength-grid, velocity, and output options.
 
 The grid is linear in vacuum wavelength; --lambda-range-nm MIN MAX sets its
@@ -13,9 +13,16 @@ Plot titles show the minimum local Doppler width in wavelength and frequency.
 This is a fixed-source calculation using Jbar00 and Jbar20 from the model,
 not a self-consistent NLTE calculation. The line is unmagnetized, the bulk
 velocity is a constant vertical velocity using a nonrelativistic Doppler shift,
-and the formal solution neglects polarization-dependent propagation. With
---continuum, the continuum is gray and thermal, inferred from tau500 as in
-plot_model_file.py. A nonzero velocity does not update the prescribed JKQ.
+and the formal solution neglects polarization-dependent propagation. By
+default the total line-center optical depth is taken from log_tau_line. A
+gray, thermal continuum is inferred by subtracting the population-based line
+opacity from the reconstructed line-center opacity. This assumes all residual
+opacity is continuum and treats scattering as thermal emission. The inversion
+is sensitive to rounding of the tabulated optical depths. --line-only omits
+this continuum. The continuum thermal emission and the lower boundary use the
+Planck function at each wavelength; the line source function uses nu0. A
+nonzero velocity shifts the line profile but does not update the prescribed
+JKQ or the inferred static continuum.
 """
 import argparse
 import os
@@ -26,7 +33,7 @@ from atmosphere import AMU, C_LIGHT, K_B, Atmosphere1D, Grid, LineModel, LineSta
 from formal_solver import solve_short_characteristics
 from grid_opacity import fill_grid, planck
 from plot_model_file import (
-    DEFAULT_MODEL, M3_TO_CM3, W_TO_CGS, continuum_from_tau500, cumulative_tau,
+    DEFAULT_MODEL, M3_TO_CM3, W_TO_CGS, build_grid, continuum_from_tau500, cumulative_tau,
     header_value, plt, read_model, resolve_model, stokes_percent,
 )
 
@@ -64,13 +71,37 @@ def wavelength_grid(line, delta_nu_D, n_lambda, extent, limits_nm):
     return np.linspace(*limits, n_lambda), delta_lambda_ref
 
 
-def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=False, gamma=0.0):
+def continuum_from_line_center(col, line, v_turb):
+    """Reconstruct nodal gray continuum from total line-center optical depth."""
+    if "log_tau_line" not in col or "n_upper" not in col:
+        raise ValueError("model must contain log_tau_line and n_upper")
+    total_tau = 10.0 ** col["log_tau_line"]
+    dz = -np.diff(col["height_km"] * 1e5)
+    if (not np.all(np.isfinite(total_tau)) or np.any(total_tau <= 0)
+            or np.any(np.diff(total_tau) <= 0) or np.any(dz <= 0)):
+        raise ValueError("line-center optical depth must be finite, positive, and strictly increasing")
+    grid = build_grid(col, line, v_turb, np.array([1.]), np.array([0.]),
+                      np.array([1.]), np.zeros(len(total_tau)), 0., use_populations=True)
+    total_chi = np.empty_like(total_tau)
+    total_chi[0] = 2 * total_tau[0] / dz[0]
+    for k in range(len(dz)):
+        total_chi[k + 1] = 2 * (total_tau[k + 1] - total_tau[k]) / dz[k] - total_chi[k]
+    chi_c = total_chi - grid.eta[:, 0, 0, 0, 0]
+    if not np.all(np.isfinite(chi_c)) or np.any(chi_c < 0):
+        raise ValueError("line-center optical depths imply negative or nonfinite continuum opacity; "
+                         "the tabulated depths may be too rounded or inconsistent with the line model")
+    return chi_c
+
+
+def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, gamma=0.0):
     """Return frequency offsets, reduced x, source, optical depth, and Stokes.
 
     Wavelength [NL] is in cm; mu [Nmu] contains outward ray cosines.
     x and tau are [ND, NL, Nmu, 1]; source and Stokes are
     [ND, 3, NL, Nmu, 1]. Radiation quantities are per Hz in CGS.
     v_z is in cm/s; positive is upward. The last dimension is azimuth.
+    The tabulated half-cell is included in tau, but the boundary of the formal
+    solution is at the top grid point; no transfer through that half-cell is solved.
     """
     wavelength = np.asarray(wavelength, dtype=float)
     mu = np.asarray(mu, dtype=float)
@@ -84,12 +115,14 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=False, g
         raise ValueError("v_z must be finite and have magnitude below the speed of light")
 
     n = len(col["height_km"])
-    tau_cont, chi_c = continuum_from_tau500(col) if continuum else (np.zeros(n), np.zeros(n))
+    if "n_upper" not in col:
+        raise ValueError("model must contain n_upper")
+    chi_c = continuum_from_line_center(col, line, v_turb) if continuum else np.zeros(n)
     atm = Atmosphere1D(z=col["height_km"] * 1e5, T=col["T_K"],
                        v_z=np.full(n, v_z), B=np.zeros((n, 3)),
                        v_turb=v_turb, chi_c=chi_c)
     state = LineState(atm, line, col["n_lower"] * M3_TO_CM3, col["C_ul"],
-                      np.zeros(n), a=col["a_damp"])
+                      np.zeros(n), a=col["a_damp"], n_u=col["n_upper"] * M3_TO_CM3)
 
     # Wavelength increases, so the corresponding frequency-offset grid decreases.
     # Frequency weights are positive trapezoidal widths; prescribed JKQ means
@@ -106,33 +139,29 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=False, g
     jkq[:, 2, 2] = col["Jbar20"] * W_TO_CGS
     grid.set_JKQ(jkq)
 
-    # x is computed in the comoving frame for each depth, wavelength and ray.
-    # fill_grid evaluates the same x internally to build the LL04 Phi tables,
-    # then combines Phi with the prescribed JKQ to obtain j and eta.
+    # Positive projected velocity is toward the observer; recession is -v_proj.
     v_proj = atm.projected_velocity(mu, grid.phi)  # [ND, Nmu, 1]
-    x = (-nu[None, :, None, None] + line.nu0 * v_proj[:, None] / C_LIGHT)
-    x = x / state.delta_nu_D[:, None, None, None]  # [ND, NL, Nmu, 1]
-    fill_grid(grid, gamma=gamma)
+    delta_lambda = line.lambda0 * state.delta_nu_D / line.nu0
+    x = (wavelength[None, :, None, None]
+         - line.lambda0 * (1 - v_proj[:, None] / C_LIGHT))
+    x = x / delta_lambda[:, None, None, None]  # [ND, NL, Nmu, 1]
+    fill_grid(grid, gamma=gamma, wavelength_profile=True)
 
     # eta_I is [ND, NL, Nmu, 1], j and S are [ND, 3, NL, Nmu, 1].
     eta_i = grid.eta[:, 0]
     if not np.all(np.isfinite(eta_i)) or np.any(eta_i <= 0):
         raise ValueError("total opacity must be finite and positive at every grid point")
     source = grid.emis[:, :3] / eta_i[:, None]
-    line_opacity = eta_i - chi_c[:, None, None, None]
-    if not np.all(np.isfinite(line_opacity)) or np.any(line_opacity < 0):
-        raise ValueError("line opacity must be finite and non-negative")
-
-    # Integrate vertical opacity from the top separately for each ray:
-    # velocity shifts the line differently at different mu. tau500 supplies
-    # the continuum integral, consistent with plot_model_file.py.
+    # Integrate vertical opacity separately for each ray; the solver divides
+    # each optical-depth increment by |mu|.
     tau = np.empty_like(eta_i)
     stokes = np.empty_like(source)
     dz = -np.diff(atm.z)
     for k, ray in enumerate(mu):
-        tau[:, :, k, 0] = cumulative_tau(line_opacity[:, :, k, 0], dz) + tau_cont[:, None]
+        opacity = eta_i[:, :, k, 0]
+        tau[:, :, k, 0] = cumulative_tau(opacity, dz) + opacity[0] * dz[0] / 2
         boundary = np.zeros((3, len(nu), 1, 1))
-        boundary[0] = planck(line.nu0, atm.T[-1])
+        boundary[0] = planck(C_LIGHT / wavelength, atm.T[-1])[:, None, None]
         stokes[:, :, :, k:k + 1, :] = solve_short_characteristics(
             source[:, :, :, k:k + 1, :], tau[:, :, k, 0], np.array([ray]),
             np.zeros_like(boundary), boundary)
@@ -197,7 +226,12 @@ def main():
                         help="constant vertical bulk velocity in km/s, positive upward")
     parser.add_argument("--mass", type=float, default=87.62, help="atomic mass in amu")
     parser.add_argument("--gamma-deg", type=float, default=90.0)
-    parser.add_argument("--continuum", action="store_true")
+    opacity_group = parser.add_mutually_exclusive_group()
+    opacity_group.add_argument("--continuum", dest="continuum", action="store_true",
+                               help="include continuum inferred from log_tau_line (default)")
+    opacity_group.add_argument("--line-only", dest="continuum", action="store_false",
+                               help="omit the inferred continuum")
+    parser.set_defaults(continuum=True)
     args = parser.parse_args()
 
     col, header = read_model(resolve_model(args.model))
@@ -209,6 +243,12 @@ def main():
         col, line, v_turb, wavelength, mu, args.v_z * 1e5, args.continuum, np.deg2rad(args.gamma_deg))
     print(f"x {x.shape}; source {source.shape}; tau {tau.shape}; Stokes {stokes.shape}")
     print("Fixed prescribed Jbar tensors; unmagnetized scalar-opacity formal solution.")
+    if args.continuum:
+        print("Gray thermal continuum inferred from the static total line-center optical depth.")
+        print("The half-cell optical depth is recorded but not traversed by the formal solution.")
+        ratio = continuum_from_line_center(col, line, v_turb) / continuum_from_tau500(col)[1]
+        print(f"chi_c(line-centre inversion) / chi_c(tau500): min {ratio.min():.3g}, "
+              f"median {np.median(ratio):.3g}, max {ratio.max():.3g}")
     if args.v_z != 0:
         print("Bulk velocity does not update the prescribed radiation tensors.")
     plot_spectra(wavelength, nu, stokes, mu, line, width, args.outdir, args.continuum)
