@@ -2,7 +2,6 @@
 import numpy as np
 from numba import jit
 from scipy.linalg import expm
-from numba import jit
 
 
 @jit(nopython=True)
@@ -228,171 +227,175 @@ def propagate_constant_slab(emissivity, coefficients, distance, incident):
 
 
 @jit(nopython=True)
-def short_characteristics(tau, S, mu, I_boundary):
-    """Parabolic short-characteristics sweep for one ray and scalar source."""
-    ND = S.shape[0]
-    begin = ND - 1
-    end = -1
-    step = -1
-    if mu < 0:
-        begin = 0
-        end = ND
-        step = 1
+def _delo_weights(delta):
+    """exp(-delta) and the linear-source weights of the upstream and downstream node.
 
-    I = np.zeros(ND)
-    L = np.zeros(ND)
-    I[begin] = I_boundary
-
-    for d in range(begin + step, end - step, step):
-        delta_u = (tau[d - step] - tau[d]) / mu
-        delta_d = (tau[d] - tau[d + step]) / mu
-        expd = np.exp(-delta_u)
-
-        if delta_u <= 0.01:
-            du = delta_u
-            w0 = du * (
-                1.0 - du / 2.0 + du**2 / 6.0 - du**3 / 24.0 + du**4 / 120.0
-                - du**5 / 720.0 + du**6 / 5040.0 - du**7 / 40320.0 + du**8 / 362880.0
-            )
-            w1 = du**2 * (
-                0.5 - du / 3.0 + du**2 / 8.0 - du**3 / 30.0 + du**4 / 144.0
-                - du**5 / 840.0 + du**6 / 5760.0 - du**7 / 45360.0 + du**8 / 403200.0
-            )
-            w2 = du**3 * (
-                1.0 / 3.0 - du / 4.0 + du**2 / 10.0 - du**3 / 36.0 + du**4 / 168.0
-                - du**5 / 960.0 + du**6 / 6480.0 - du**7 / 50400.0 + du**8 / 443520.0
-            )
-        else:
-            w0 = 1.0 - expd
-            w1 = w0 - delta_u * expd
-            w2 = 2.0 * w1 - delta_u**2 * expd
-
-        psi0 = w0 + (
-            w1 * (delta_u / delta_d - delta_d / delta_u)
-            - w2 * (1.0 / delta_d + 1.0 / delta_u)
-        ) / (delta_u + delta_d)
-        psiu = (w2 / delta_u + w1 * delta_d / delta_u) / (delta_u + delta_d)
-        psid = (w2 / delta_d - w1 * delta_u / delta_d) / (delta_u + delta_d)
-
-        I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d] + psid * S[d + step]
-        L[d] = psi0
-
-    d = end - step
-    delta_u = (tau[d - step] - tau[d]) / mu
-    expd = np.exp(-delta_u)
-    if delta_u < 0.01:
-        expd = 1.0 - delta_u + delta_u**2 / 2.0 - delta_u**3 / 6.0
-        psi0 = delta_u / 2.0 - delta_u**2 / 6.0 + delta_u**3 / 24.0
-        psiu = delta_u / 2.0 - delta_u**2 / 3.0 + delta_u**3 / 8.0
-    else:
-        psi0 = 1.0 - (1.0 - expd) / delta_u
-        psiu = -expd + (1.0 - expd) / delta_u
-
-    I[d] = I[d - step] * expd + psiu * S[d - step] + psi0 * S[d]
-    L[d] = psi0
-    return I, L
-
-
-def _validate_transfer_inputs(source, tau, mu, top_bc, bottom_bc):
-    source = np.asarray(source, dtype=float)
-    tau = np.asarray(tau, dtype=float)
-    mu = np.asarray(mu, dtype=float)
-    top_bc = np.asarray(top_bc, dtype=float)
-    bottom_bc = np.asarray(bottom_bc, dtype=float)
-    if source.ndim != 5 or source.shape[0] < 2 or source.shape[1] != 3:
-        raise ValueError("source must have shape [depth >= 2, 3, frequency, mu, phi]")
-    nd, _, nf, nm, np_ = source.shape
-    if tau.shape != (nd, nf) or not np.all(np.isfinite(tau)) or np.any(np.diff(tau, axis=0) <= 0):
-        raise ValueError("tau must be finite, strictly increasing, and have shape [depth, frequency]")
-    if mu.shape != (nm,) or not np.all(np.isfinite(mu)) or np.any(mu == 0) or np.any(np.abs(mu) > 1):
-        raise ValueError("mu must be finite, nonzero, and in [-1, 1]")
-    if top_bc.shape != (3, nf, nm, np_) or bottom_bc.shape != top_bc.shape:
-        raise ValueError("boundary arrays must have shape [3, frequency, mu, phi]")
-    if not all(np.all(np.isfinite(a)) for a in (source, top_bc, bottom_bc)):
-        raise ValueError("source and boundary arrays must be finite")
-    return source, tau, mu, top_bc, bottom_bc
-
-
-def solve_short_characteristics(source, tau, mu, top_bc, bottom_bc):
-    """Solve radiative transfer for I, Q, U with parabolic short characteristics.
-
-    Uses the parabolic short-characteristics method (Hubeny & Mihalas) with
-    JIT-compilation for efficiency. Handles all three Stokes components.
-
-    Parameters
-    ----------
-    source : array
-        Source function [depth, 3, frequency, mu, phi]
-    tau : array
-        Optical depth [depth, frequency]
-    mu : array
-        Cosines of viewing angles
-    top_bc : array
-        Top boundary condition (dark, typically zeros) [3, frequency, mu, phi]
-    bottom_bc : array
-        Bottom boundary condition (Planck, typically) [3, frequency, mu, phi]
-
-    Returns
-    -------
-    stokes : array
-        Stokes I, Q, U [depth, 3, frequency, mu, phi]
+    w_u = (1 - exp(-delta))/delta - exp(-delta), w_d = 1 - (1 - exp(-delta))/delta.
+    Taylor series below delta = 1e-2 avoid cancellation.
     """
-    source, tau, mu, top_bc, bottom_bc = _validate_transfer_inputs(
-        source, tau, mu, top_bc, bottom_bc
-    )
-    n_depth = source.shape[0]
-    n_stokes = 3
-    n_freq = source.shape[2]
-    n_mu = len(mu)
-    n_phi = source.shape[4]
+    expd = np.exp(-delta)
+    if delta < 1e-2:
+        w_u = delta * (0.5 + delta * (-1.0 / 3 + delta * (1.0 / 8 + delta * (
+            -1.0 / 30 + delta * (1.0 / 144 + delta * (-1.0 / 840 + delta / 5760))))))
+        w_d = delta * (0.5 + delta * (-1.0 / 6 + delta * (1.0 / 24 + delta * (
+            -1.0 / 120 + delta * (1.0 / 720 + delta * (-1.0 / 5040 + delta / 40320))))))
+    else:
+        ratio = -np.expm1(-delta) / delta
+        w_u = ratio - expd
+        w_d = 1.0 - ratio
+    return expd, w_u, w_d
 
-    # Initialize output array [depth, 3, frequency, mu, phi]
-    stokes = np.zeros((n_depth, n_stokes, n_freq, n_mu, n_phi), dtype=float)
 
-    # For each frequency, viewing angle, and azimuthal direction
-    for f in range(n_freq):
-        for k, mu_val in enumerate(mu):
-            for p in range(n_phi):
-                # Solve each Stokes component separately
-                for s in range(n_stokes):
-                    # Extract source function for this component [depth]
-                    S_src = source[:, s, f, k, p].copy()
-                    # Boundary condition at appropriate end
-                    S_bc = (bottom_bc if mu_val > 0 else top_bc)[s, f, k, p]
+@jit(nopython=True)
+def _kprime(eta_row, out):
+    """Fill out [4, 4] with K / eta_I - 1 (zero diagonal) from (eta_IQUV, rho_QUV)."""
+    inv = 1.0 / eta_row[0]
+    eq, eu, ev = eta_row[1] * inv, eta_row[2] * inv, eta_row[3] * inv
+    rq, ru, rv = eta_row[4] * inv, eta_row[5] * inv, eta_row[6] * inv
+    out[:, :] = 0.0
+    out[0, 1], out[0, 2], out[0, 3] = eq, eu, ev
+    out[1, 0], out[1, 2], out[1, 3] = eq, rv, -ru
+    out[2, 0], out[2, 1], out[2, 3] = eu, -rv, rq
+    out[3, 0], out[3, 1], out[3, 2] = ev, ru, -rq
 
-                    # Solve using parabolic short characteristics
-                    stokes[:, s, f, k, p], _ = short_characteristics(
-                        tau[:, f], S_src, mu_val, S_bc
-                    )
 
+@jit(nopython=True)
+def _solve4(a, b):
+    """Solve a x = b for a [4, 4] by Gaussian elimination with partial pivoting; a and b are overwritten."""
+    for col in range(4):
+        pivot = col
+        for row in range(col + 1, 4):
+            if abs(a[row, col]) > abs(a[pivot, col]):
+                pivot = row
+        if a[pivot, col] == 0.0:
+            raise ValueError("singular DELO system")
+        if pivot != col:
+            for k in range(4):
+                a[col, k], a[pivot, k] = a[pivot, k], a[col, k]
+            b[col], b[pivot] = b[pivot], b[col]
+        for row in range(col + 1, 4):
+            factor = a[row, col] / a[col, col]
+            for k in range(col, 4):
+                a[row, k] -= factor * a[col, k]
+            b[row] -= factor * b[col]
+    x = np.zeros(4)
+    for row in range(3, -1, -1):
+        total = b[row]
+        for k in range(row + 1, 4):
+            total -= a[row, k] * x[k]
+        x[row] = total / a[row, row]
+    return x
+
+
+@jit(nopython=True)
+def delo_polarized_ray(eta, emis, dz, mu, I_boundary):
+    """DELO-linear solution of the polarized transfer equation along one ray.
+
+    Solves dI/ds = emis - K I with K built from eta = (eta_I, eta_Q, eta_U, eta_V,
+    rho_Q, rho_U, rho_V) as in propagation_matrix. With dt = eta_I ds, K' = K/eta_I - 1
+    and S = emis/eta_I the equation is dI/dt = -I + (S - K' I). The bracket is
+    interpolated linearly in t across each layer, which gives, for upstream node u
+    and downstream node d,
+        (1 + w_d K'_d) I_d = (exp(-delta) - w_u K'_u) I_u + w_u S_u + w_d S_d,
+    with delta = (eta_I,u + eta_I,d) / 2 * |dz| / |mu| and the weights of _delo_weights.
+    K' = 0 reproduces solve_unpolarized_transfer for the same optical depths.
+
+    Shapes: eta [depth, 7] (cm^-1), emis [depth, 4] (same units as eta times I),
+    dz [depth - 1] with dz[k] = z[k] - z[k+1] > 0 (cm, index 0 is the top),
+    mu a nonzero cosine, I_boundary [4] the incoming Stokes vector. Rays with
+    mu > 0 travel upward from the bottom, mu < 0 downward from the top.
+    Returns the Stokes vector at every depth, [depth, 4].
+    """
+    nd = emis.shape[0]
+    if nd < 2 or mu == 0.0 or abs(mu) > 1.0:
+        raise ValueError("need at least two depth points and a nonzero mu with |mu| <= 1")
+    begin, step, end = (nd - 1, -1, -1) if mu > 0 else (0, 1, nd)
+    for d in range(nd):
+        if not eta[d, 0] > 0.0:
+            raise ValueError("eta_I must be positive")
+    for k in range(nd - 1):
+        if not dz[k] > 0.0:
+            raise ValueError("dz must be positive")
+
+    stokes = np.zeros((nd, 4))
+    stokes[begin, :] = I_boundary
+    kp_u = np.zeros((4, 4))
+    kp_d = np.zeros((4, 4))
+    _kprime(eta[begin], kp_u)
+    system = np.zeros((4, 4))
+    rhs = np.zeros(4)
+    for d in range(begin + step, end, step):
+        u = d - step
+        _kprime(eta[d], kp_d)
+        delta = 0.5 * (eta[u, 0] + eta[d, 0]) * dz[min(u, d)] / abs(mu)
+        expd, w_u, w_d = _delo_weights(delta)
+        for i in range(4):
+            rhs[i] = (expd * stokes[u, i] + w_u * emis[u, i] / eta[u, 0]
+                      + w_d * emis[d, i] / eta[d, 0])
+            for j in range(4):
+                rhs[i] -= w_u * kp_u[i, j] * stokes[u, j]
+                system[i, j] = w_d * kp_d[i, j] + (1.0 if i == j else 0.0)
+        stokes[d, :] = _solve4(system, rhs)
+        kp_u[:, :] = kp_d
     return stokes
 
 
-def solve_unpolarized_transfer(source, tau, mu, top_bc, bottom_bc):
-    """Solve the uncoupled Stokes equations with a linear source in each cell."""
-    source, tau, mu, top_bc, bottom_bc = _validate_transfer_inputs(
-        source, tau, mu, top_bc, bottom_bc
-    )
-    result = np.empty_like(source)
-    for k, ray_mu in enumerate(mu):
-        step = -1 if ray_mu > 0 else 1
-        begin = source.shape[0] - 1 if ray_mu > 0 else 0
-        end = -1 if ray_mu > 0 else source.shape[0]
-        result[begin, :, :, k, :] = (bottom_bc if ray_mu > 0 else top_bc)[:, :, k, :]
-        for d in range(begin + step, end, step):
-            up = d - step
-            dt = np.abs(tau[d] - tau[up]) / abs(ray_mu)
-            expd = np.exp(-dt)
-            w0 = -np.expm1(-dt)
-            small = dt < 1e-3
-            up_weight = np.empty_like(dt)
-            x = dt[small]
-            up_weight[small] = x * (0.5 - x / 3 + x**2 / 8 - x**3 / 30 + x**4 / 144)
-            up_weight[~small] = w0[~small] / dt[~small] - expd[~small]
-            local_weight = w0 - up_weight
-            result[d, :, :, k, :] = (
-                expd[None, :, None] * result[up, :, :, k, :]
-                + up_weight[None, :, None] * source[up, :, :, k, :]
-                + local_weight[None, :, None] * source[d, :, :, k, :]
-            )
+@jit(nopython=True)
+def _delo_field(eta, emis, dz, mu, top, bottom):
+    """Run delo_polarized_ray over every wavelength, mu and phi.
+
+    eta [NL, Nmu, Nphi, ND, 7], emis [NL, Nmu, Nphi, ND, 4], top and bottom
+    [NL, Nmu, Nphi, 4]; returns [NL, Nmu, Nphi, ND, 4].
+    """
+    nnu, nmu, nphi, nd = eta.shape[0], eta.shape[1], eta.shape[2], eta.shape[3]
+    result = np.zeros((nnu, nmu, nphi, nd, 4))
+    for f in range(nnu):
+        for m in range(nmu):
+            for p in range(nphi):
+                boundary = bottom[f, m, p] if mu[m] > 0 else top[f, m, p]
+                result[f, m, p] = delo_polarized_ray(
+                    eta[f, m, p], emis[f, m, p], dz, mu[m], boundary)
     return result
+
+
+def solve_delo(emis, eta, z, mu, top, bottom):
+    """Polarized DELO-linear formal solution of I, Q, U, V for every ray.
+
+    emis [depth, 4, frequency, mu, phi] and eta [depth, 7, frequency, mu, phi] are the
+    arrays filled by grid_opacity.fill_grid (grid.emis, grid.eta), with eta ordered
+    (eta_I, eta_Q, eta_U, eta_V, rho_Q, rho_U, rho_V) in cm^-1. z [depth] is the height
+    in cm, strictly decreasing (index 0 is the top). mu [mu] holds nonzero cosines;
+    mu > 0 rays travel upward from bottom, mu < 0 rays downward from top. top and
+    bottom [4, frequency, mu, phi] are the incoming Stokes vectors; only the boundary
+    a ray enters from is used. Returns the Stokes vector [depth, 4, frequency, mu, phi],
+    whose depth index 0 is the emergent radiation of the mu > 0 rays.
+    """
+    emis, eta, z, mu, top, bottom = (
+        np.asarray(a) for a in (emis, eta, z, mu, top, bottom))
+    for name, value in (("emis", emis), ("eta", eta), ("z", z), ("mu", mu),
+                        ("top", top), ("bottom", bottom)):
+        if not np.isrealobj(value) or not np.all(np.isfinite(value)):
+            raise ValueError(f"{name} must be real and finite")
+    if emis.ndim != 5 or emis.shape[0] < 2 or emis.shape[1] != 4:
+        raise ValueError("emis must have shape [depth >= 2, 4, frequency, mu, phi]")
+    depth, _, nnu, nmu, nphi = emis.shape
+    if eta.shape != (depth, 7, nnu, nmu, nphi):
+        raise ValueError(f"eta must have shape {(depth, 7, nnu, nmu, nphi)}")
+    if z.shape != (depth,) or np.any(np.diff(z) >= 0):
+        raise ValueError(f"z must have shape ({depth},) and strictly decrease with depth index")
+    if mu.shape != (nmu,) or np.any(mu == 0) or np.any(np.abs(mu) > 1):
+        raise ValueError(f"mu must have shape ({nmu},), be nonzero and satisfy |mu| <= 1")
+    if top.shape != (4, nnu, nmu, nphi) or bottom.shape != top.shape:
+        raise ValueError(f"top and bottom must have shape {(4, nnu, nmu, nphi)}")
+    if np.any(eta[:, 0] <= 0):
+        raise ValueError("eta_I must be positive")
+
+    def rays_first(a, depth_axes):
+        return np.ascontiguousarray(a.transpose(depth_axes), dtype=float)
+
+    result = _delo_field(
+        rays_first(eta, (2, 3, 4, 0, 1)), rays_first(emis, (2, 3, 4, 0, 1)),
+        np.ascontiguousarray(-np.diff(z), dtype=float), np.asarray(mu, dtype=float),
+        rays_first(top, (1, 2, 3, 0)), rays_first(bottom, (1, 2, 3, 0)),
+    )
+    return np.ascontiguousarray(result.transpose(3, 4, 0, 1, 2))

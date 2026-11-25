@@ -104,6 +104,32 @@ class PhysicalFlowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "negative or nonfinite continuum"):
             continuum_from_line_center(col, self.line, self.v_turb)
 
+    def test_delo_zero_field_matches_linear_scalar_transfer(self):
+        nu, _, source, tau, scalar = physical_flow(
+            self.col, self.line, self.v_turb, self.wavelength, self.mu,
+            continuum=True, gamma=np.pi / 2, solver="sc")
+        _, _, _, _, delo = physical_flow(
+            self.col, self.line, self.v_turb, self.wavelength, self.mu,
+            continuum=True, gamma=np.pi / 2, solver="delo")
+        grid = build_grid(
+            self.col, self.line, self.v_turb, self.mu, nu, np.ones_like(nu),
+            continuum_from_line_center(self.col, self.line, self.v_turb), np.pi / 2,
+            use_populations=True)
+        fill_grid(grid, gamma=np.pi / 2, wavelength_profile=True)
+        scalar_source = grid.emis[:, :3] / grid.eta[:, 0, None]
+        dz = -np.diff(grid.atm.z)
+        scalar_tau = cumulative_tau(grid.eta[:, 0, :, 0, 0], dz)
+        scalar_tau += grid.eta[0, 0, :, 0, 0][None, :] * dz[0] / 2
+        top = np.zeros((3, len(nu), len(self.mu), 1))
+        bottom = np.zeros_like(top)
+        bottom[0] = planck(C_LIGHT / self.wavelength, grid.atm.T[-1])[:, None, None]
+        linear = transfer(scalar_source, scalar_tau, self.mu, self.line,
+                          grid.atm.T[-1], bottom[0], "fs")
+        self.assertEqual(delo.shape[1], 4)
+        np.testing.assert_allclose(delo[:, :3], linear, rtol=2e-12, atol=1e-20)
+        np.testing.assert_array_equal(delo[:, 3], 0.0)
+        self.assertEqual(scalar.shape[1], 3)
+
     def test_inferred_continuum_tracks_tabulated_depth(self):
         baseline = continuum_from_line_center(self.col, self.line, self.v_turb)
         dz = -np.diff(self.col["height_km"] * 1e5)

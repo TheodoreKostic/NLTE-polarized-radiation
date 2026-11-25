@@ -1,6 +1,6 @@
 """Compute and plot emergent spectra starting from a wavelength grid.
 
-Run: python plot_physical_flow.py [model.txt] [--line-only]
+Run: python plot_physical_flow.py [model.txt] [--solver delo]
 Use --help for wavelength-grid, velocity, and output options.
 
 The grid is linear in vacuum wavelength; --lambda-range-nm MIN MAX sets its
@@ -11,18 +11,20 @@ show I_nu per Hz. Q/I and U/I are percentages in all plots.
 Plot titles show the minimum local Doppler width in wavelength and frequency.
 
 This is a fixed-source calculation using Jbar00 and Jbar20 from the model,
-not a self-consistent NLTE calculation. The line is unmagnetized, the bulk
-velocity is a constant vertical velocity using a nonrelativistic Doppler shift,
-and the formal solution neglects polarization-dependent propagation. By
-default the total line-center optical depth is taken from log_tau_line. A
-gray, thermal continuum is inferred by subtracting the population-based line
-opacity from the reconstructed line-center opacity. This assumes all residual
-opacity is continuum and treats scattering as thermal emission. The inversion
-is sensitive to rounding of the tabulated optical depths. --line-only omits
-this continuum. The continuum thermal emission and the lower boundary use the
-Planck function at each wavelength; the line source function uses nu0. A
-nonzero velocity shifts the line profile but does not update the prescribed
-JKQ or the inferred static continuum.
+not a self-consistent NLTE calculation. The default scalar solver treats Stokes
+components independently; --solver delo uses the polarized DELO-linear solver
+and propagates all four Stokes components with the full propagation matrix.
+This script currently assumes zero magnetic field; the file supplies populations
+and its population-based emissivity currently supports B = 0. The bulk velocity
+is a constant vertical velocity using a nonrelativistic Doppler shift. By
+default the total line-center optical depth is taken from log_tau_line. A gray,
+thermal continuum is inferred by subtracting the population-based line opacity
+from the reconstructed line-center opacity. This assumes all residual opacity
+is continuum and treats scattering as thermal emission. The inversion is
+sensitive to rounding of the tabulated optical depths. --line-only omits this
+continuum. The continuum thermal emission and lower boundary use the Planck
+function at each wavelength; the line source function uses nu0. A nonzero
+velocity does not update the prescribed JKQ or inferred static continuum.
 """
 import argparse
 import os
@@ -30,7 +32,7 @@ import os
 import numpy as np
 
 from atmosphere import AMU, C_LIGHT, K_B, Atmosphere1D, Grid, LineModel, LineState
-from formal_solver import solve_short_characteristics
+from formal_solver import solve_delo, solve_short_characteristics
 from grid_opacity import fill_grid, planck
 from plot_model_file import (
     DEFAULT_MODEL, M3_TO_CM3, W_TO_CGS, build_grid, continuum_from_tau500, cumulative_tau,
@@ -93,12 +95,14 @@ def continuum_from_line_center(col, line, v_turb):
     return chi_c
 
 
-def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, gamma=0.0):
+def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, gamma=0.0,
+                  solver="sc"):
     """Return frequency offsets, reduced x, source, optical depth, and Stokes.
 
     Wavelength [NL] is in cm; mu [Nmu] contains outward ray cosines.
-    x and tau are [ND, NL, Nmu, 1]; source and Stokes are
-    [ND, 3, NL, Nmu, 1]. Radiation quantities are per Hz in CGS.
+    x and tau are [ND, NL, Nmu, 1]; source is [ND, 3, NL, Nmu, 1].
+    Stokes is [ND, 3, NL, Nmu, 1] for solver="sc" and
+    [ND, 4, NL, Nmu, 1] for solver="delo". Radiation quantities are per Hz in CGS.
     v_z is in cm/s; positive is upward. The last dimension is azimuth.
     The tabulated half-cell is included in tau, but the boundary of the formal
     solution is at the top grid point; no transfer through that half-cell is solved.
@@ -113,6 +117,8 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
         raise ValueError("mu must contain finite outward cosines in (0, 1]")
     if not np.isfinite(v_z) or abs(v_z) >= C_LIGHT:
         raise ValueError("v_z must be finite and have magnitude below the speed of light")
+    if solver not in ("sc", "delo"):
+        raise ValueError("solver must be 'sc' or 'delo'")
 
     n = len(col["height_km"])
     if "n_upper" not in col:
@@ -155,25 +161,36 @@ def physical_flow(col, line, v_turb, wavelength, mu, v_z=0.0, continuum=True, ga
     # Integrate vertical opacity separately for each ray; the solver divides
     # each optical-depth increment by |mu|.
     tau = np.empty_like(eta_i)
-    stokes = np.empty_like(source)
+    stokes = np.empty((n, 4 if solver == "delo" else 3, len(nu), len(mu), 1))
     dz = -np.diff(atm.z)
-    for k, ray in enumerate(mu):
-        opacity = eta_i[:, :, k, 0]
-        tau[:, :, k, 0] = cumulative_tau(opacity, dz) + opacity[0] * dz[0] / 2
-        boundary = np.zeros((3, len(nu), 1, 1))
-        boundary[0] = planck(C_LIGHT / wavelength, atm.T[-1])[:, None, None]
-        stokes[:, :, :, k:k + 1, :] = solve_short_characteristics(
-            source[:, :, :, k:k + 1, :], tau[:, :, k, 0], np.array([ray]),
-            np.zeros_like(boundary), boundary)
+    if solver == "delo":
+        top = np.zeros((4, len(nu), len(mu), 1))
+        bottom = np.zeros_like(top)
+        bottom[0] = planck(C_LIGHT / wavelength, atm.T[-1])[:, None, None]
+        stokes = solve_delo(grid.emis, grid.eta, atm.z, mu, top, bottom)
+        for k in range(len(mu)):
+            tau[:, :, k, 0] = (
+                cumulative_tau(eta_i[:, :, k, 0], dz) + eta_i[0, :, k, 0] * dz[0] / 2
+            )
+    else:
+        for k, ray in enumerate(mu):
+            opacity = eta_i[:, :, k, 0]
+            tau[:, :, k, 0] = cumulative_tau(opacity, dz) + opacity[0] * dz[0] / 2
+            boundary = np.zeros((3, len(nu), 1, 1))
+            boundary[0] = planck(C_LIGHT / wavelength, atm.T[-1])[:, None, None]
+            stokes[:, :, :, k:k + 1, :] = solve_short_characteristics(
+                source[:, :, :, k:k + 1, :], tau[:, :, k, 0], np.array([ray]),
+                np.zeros_like(boundary), boundary)
     return nu, x, source, tau, stokes
 
 
-def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, continuum):
+def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, continuum,
+                 solver="sc"):
     """Plot top-boundary I and Q/I, U/I against three spectral coordinates."""
     os.makedirs(outdir, exist_ok=True)
     wavelength_nm = wavelength * 1e7
     delta_nu_ref = line.nu0 * delta_lambda_ref / line.lambda0
-    prefix = "continuum" if continuum else "line"
+    prefix = f"{solver}_{'continuum' if continuum else 'line'}"
     axes = (
         ("wavelength", wavelength_nm, "Wavelength [nm]", True),
         ("frequency", nu / 1e9, "Frequency offset from line center [GHz]", False),
@@ -181,14 +198,16 @@ def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, con
          "Wavelength offset [reference Doppler widths]", True),
     )
     for name, coordinate, xlabel, per_wavelength in axes:
-        fig, panels = plt.subplots(1, 3, figsize=(15, 4.2), constrained_layout=True)
+        fig, panels = plt.subplots(1, 4, figsize=(19, 4.2), constrained_layout=True)
         order = np.argsort(coordinate)
         for k, ray in enumerate(mu):
             # Convert CGS I_nu to SI; for I_lambda also multiply by |dnu/dlambda|
             # and convert the wavelength density from per cm to per nm.
-            emergent = stokes[0, :, :, k, 0] / W_TO_CGS  # [3, NL], SI per Hz
+            emergent = stokes[0, :, :, k, 0] / W_TO_CGS  # [3 or 4, NL], SI per Hz
             if per_wavelength:
                 emergent = emergent * (C_LIGHT / wavelength**2 * 1e-7)[None, :]
+            if emergent.shape[0] == 3:
+                emergent = np.vstack((emergent, np.zeros((1, emergent.shape[1]))))
             values = stokes_percent(emergent)
             for i, ax in enumerate(panels):
                 ax.plot(coordinate[order], values[i, order], label=f"mu={ray:g}")
@@ -199,9 +218,11 @@ def plot_spectra(wavelength, nu, stokes, mu, line, delta_lambda_ref, outdir, con
             else r"$I_\nu$ [W m$^{-2}$ Hz$^{-1}$ sr$^{-1}$]")
         panels[1].set_ylabel("Q/I [%]")
         panels[2].set_ylabel("U/I [%]")
+        panels[3].set_ylabel("V/I [%]")
         panels[0].legend()
         fig.suptitle(
-            "Emergent spectra: " + ("line + continuum" if continuum else "line only")
+            "Emergent spectra (" + solver + "): "
+            + ("line + continuum" if continuum else "line only")
             + "\n"
             + rf"$\Delta\lambda_{{D,\mathrm{{ref}}}} = {delta_lambda_ref * 1e7:.5g}$ nm, "
             + rf"$\Delta\nu_{{D,\mathrm{{ref}}}} = {delta_nu_ref / 1e9:.5g}$ GHz"
@@ -224,6 +245,8 @@ def main():
     parser.add_argument("--mu", type=float, nargs="+", default=[0.1, 0.33, 0.5, 0.75, 1.0])
     parser.add_argument("--v-z", type=float, default=0.0,
                         help="constant vertical bulk velocity in km/s, positive upward")
+    parser.add_argument("--solver", choices=("sc", "delo"), default="sc",
+                        help="sc: uncoupled scalar formal solution; delo: polarized DELO-linear")
     parser.add_argument("--mass", type=float, default=87.62, help="atomic mass in amu")
     parser.add_argument("--gamma-deg", type=float, default=90.0)
     opacity_group = parser.add_mutually_exclusive_group()
@@ -240,9 +263,11 @@ def main():
         line, line.doppler_width(col["T_K"], v_turb), args.n_lambda, args.extent, args.lambda_range_nm)
     mu = np.array(args.mu)
     nu, x, source, tau, stokes = physical_flow(
-        col, line, v_turb, wavelength, mu, args.v_z * 1e5, args.continuum, np.deg2rad(args.gamma_deg))
+        col, line, v_turb, wavelength, mu, args.v_z * 1e5, args.continuum,
+        np.deg2rad(args.gamma_deg), args.solver)
     print(f"x {x.shape}; source {source.shape}; tau {tau.shape}; Stokes {stokes.shape}")
-    print("Fixed prescribed Jbar tensors; unmagnetized scalar-opacity formal solution.")
+    print(f"Fixed prescribed Jbar tensors; {args.solver} transfer; "
+          "unmagnetized model (B=0).")
     if args.continuum:
         print("Gray thermal continuum inferred from the static total line-center optical depth.")
         print("The half-cell optical depth is recorded but not traversed by the formal solution.")
@@ -251,7 +276,8 @@ def main():
               f"median {np.median(ratio):.3g}, max {ratio.max():.3g}")
     if args.v_z != 0:
         print("Bulk velocity does not update the prescribed radiation tensors.")
-    plot_spectra(wavelength, nu, stokes, mu, line, width, args.outdir, args.continuum)
+    plot_spectra(wavelength, nu, stokes, mu, line, width, args.outdir, args.continuum,
+                 args.solver)
 
 
 if __name__ == "__main__":

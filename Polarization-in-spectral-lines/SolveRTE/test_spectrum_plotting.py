@@ -56,7 +56,7 @@ class SpectrumPlotTests(unittest.TestCase):
         stokes[0, 1, :, 0, 0] = [0.1, 0.4, 0.9]
         stokes[0, 2, :, 0, 0] = [-0.2, 0.2, 0.6]
         stokes[-1, 0, :, 0, 0] = 100
-        line = SimpleNamespace(nu0=6.5e14)
+        line = SimpleNamespace(nu0=6.5e14, lambda0=plots.C_LIGHT / 6.5e14)
         captured = []
 
         def capture(fig, *args, **kwargs):
@@ -93,7 +93,7 @@ class SpectrumPlotTests(unittest.TestCase):
         stokes[0, 0, :, :, 0] = [[2, 4], [0, -1], [4, 2]]
         stokes[0, 1, :, :, 0] = [[1, 1], [1, 1], [1, 1]]
         stokes[0, 2, :, :, 0] = [[-0.5, 0.5], [1, 1], [2, -1]]
-        line = SimpleNamespace(nu0=6.5e14)
+        line = SimpleNamespace(nu0=6.5e14, lambda0=plots.C_LIGHT / 6.5e14)
         figures = []
 
         def capture(fig, *args, **kwargs):
